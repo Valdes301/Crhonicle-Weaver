@@ -488,7 +488,15 @@ for (const m of migrations) {
         const exists = columns.some(c => c.name.toLowerCase() === m.column.toLowerCase());
         if (!exists) {
             console.log(`[DB Migration] Adding missing column ${m.column} to table ${m.table}...`);
-            db.exec(`ALTER TABLE "${m.table}" ADD COLUMN "${m.column}" ${m.type}`);
+            
+            // Se il tipo contiene DEFAULT CURRENT_TIMESTAMP, bisogna gestire l'aggiunta in due passaggi in SQLite
+            if (m.type.includes('CURRENT_TIMESTAMP')) {
+                const baseType = m.type.replace(' DEFAULT CURRENT_TIMESTAMP', '').trim();
+                db.exec(`ALTER TABLE "${m.table}" ADD COLUMN "${m.column}" ${baseType}`);
+                db.exec(`UPDATE "${m.table}" SET "${m.column}" = CURRENT_TIMESTAMP WHERE "${m.column}" IS NULL`);
+            } else {
+                db.exec(`ALTER TABLE "${m.table}" ADD COLUMN "${m.column}" ${m.type}`);
+            }
         }
     } catch (e) {
         console.error(`[DB Migration Error] Non è stato possibile migrare la colonna ${m.column} nella tabella ${m.table}:`, e);
