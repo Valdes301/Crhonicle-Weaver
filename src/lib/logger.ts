@@ -1,7 +1,7 @@
 import fs from 'fs';
 import path from 'path';
 
-const LOG_DIR = path.join(process.cwd(), 'logs');
+const LOG_DIR = path.join(process.cwd(), 'data', 'logs');
 const LOG_FILE = path.join(LOG_DIR, 'ai-interactions.log');
 
 if (!fs.existsSync(LOG_DIR)) {
