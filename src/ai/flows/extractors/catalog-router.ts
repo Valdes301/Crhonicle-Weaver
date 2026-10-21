@@ -550,14 +550,14 @@ async function extractUnifiedContent(input: CatalogRouterInput): Promise<Catalog
         });
     }
 
-    const monsters = trueMonsters.filter(m => {
+    const initialMonsters = trueMonsters.filter(m => {
         const low = m.name.toLowerCase().trim();
         if (invalidBlacklist.includes(low) || low.startsWith('pagina ') || low.startsWith('pag. ')) return false;
         return m.name.length >= 2 && (m.description || m.armorClass || m.hitPoints);
     });
 
     // 2. Oggetti & Armeria
-    const items: ExtractedItem[] = rawItems
+    let items: ExtractedItem[] = rawItems
         .map((i: any) => {
             const name = sanitizeName(i.name || i.nome || '');
             const rawCat = (i.category || '').toLowerCase();
@@ -587,6 +587,31 @@ async function extractUnifiedContent(input: CatalogRouterInput): Promise<Catalog
             };
         })
         .filter(i => i.name && i.description);
+
+    // Filtro per veicoli e macchine d'assedio scambiate per mostri (es. Carrozza Lanciafiamme, Manganella, Trabucco, Torre d'Assedio, Catapulta, ecc.)
+    const siegeKeywords = ['carrozza lanciafiamme', 'manganella', 'trabucco', 'torre d\'assedio', 'torre di assedio', 'barile tossico', 'catapulta', 'ariete'];
+    const monsters: ExtractedMonster[] = [];
+    for (const m of initialMonsters) {
+        const lowName = m.name.toLowerCase();
+        const isSiege = siegeKeywords.some(sk => lowName.includes(sk));
+        if (isSiege) {
+            items.push({
+                name: m.name,
+                category: 'Armeria',
+                type: 'Veicolo / Macchina d\'Assedio',
+                rarity: 'Normale',
+                attunement: 'No',
+                cost: '',
+                weight: '',
+                damage: '',
+                armorClass: m.armorClass,
+                description: m.description,
+                imageBox: m.imageBox
+            });
+        } else {
+            monsters.push(m);
+        }
+    }
 
     // 3. Incantesimi
     const spells: ExtractedSpell[] = rawSpells
@@ -635,7 +660,7 @@ async function extractUnifiedContent(input: CatalogRouterInput): Promise<Catalog
         // Se non è presente alcuno statblock statistico fondamentale (CA, PF o GS), NON PUÒ MAI ESSERE UN MOSTRO.
         const hasAc = /(?:classe armatura|\bca\b|armor class)[:\s*]+[0-9]+/i.test(combined);
         const hasHp = /(?:punti ferita|\bpf\b|hit points)[:\s*]+[0-9]+/i.test(combined);
-        const hasCr = /(?:grado di sfida|\bgs\b|challenge)[:\s*]+[0-9\/]+/i.test(combined);
+        const hasCr = /(?:grado di sfida|\bgs\b|\bsfida\b|challenge)[:\s*]+[0-9\/]+/i.test(combined);
 
         if (!hasAc && !hasHp && !hasCr) {
             return false;
@@ -674,7 +699,7 @@ async function extractUnifiedContent(input: CatalogRouterInput): Promise<Catalog
         if (hpMatch) hp = hpMatch[1].trim().replace(/\*+/g, '');
 
         let cr = '';
-        const crMatch = rawContent.match(/(?:Grado di Sfida|\bGS\b|Challenge)[:\s*]+([0-9\/]+[^\n\r\|]*)/i);
+        const crMatch = rawContent.match(/(?:Grado di Sfida|\bGS\b|Sfida|Challenge)[:\s*]+([0-9\/]+[^\n\r\|]*)/i);
         if (crMatch) cr = crMatch[1].trim().replace(/\*+/g, '');
 
         let type = 'Mostro';

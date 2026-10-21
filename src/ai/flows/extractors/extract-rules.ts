@@ -61,7 +61,8 @@ export type RuleExtractionOutput = {
 };
 
 const RULES_SYSTEM_INSTRUCTION = `Sei l'Archivista Supremo e Trascritore Ufficiale dei Manuali di D&D 5e e 2024 (Manuale del Giocatore PHB, Guida del Dungeon Master DMG).
-OBIETTIVO: Analizza la pagina o il testo ed estrai con assoluta fedeltà e completezza ogni singola REGOLA, MECCANICA, PROCEDURA o TABELLA come voce autonoma nell'array 'rules'.
+OBIETTIVO: Analizza la pagina o il testo ed estrai con assoluta fedeltà e completezza **OGNI SINGOLA REGOLA, SEZIONE, PARAGRAFO O TABELLA** come voce autonoma e indipendente nell'array 'rules'. 
+Non accorpare mai regole diverse o paragrafi distinti (es. Svantaggio, Conseguenze, Gradi di Fallimento, Successo a un Costo, Improvvisare i Danni, ecc.): crea un oggetto regola separato e specifico per ciascuno di essi.
 
 REGOLE MANDATORIE DI ESTRAZIONE REGOLE:
 1. NON CLASSIFICARE IN CAPITOLI:
