@@ -39,4 +39,6 @@ jobs:
           tags: ${{ steps.string.outputs.username }}/dnd-chronicle-weaver:latest
           cache-from: type=gha
           cache-to: type=gha,mode=max
+          provenance: false
+          sbom: false
 
