@@ -1,6 +1,7 @@
 import { GoogleGenAI } from '@google/genai';
 import { getAppSetting } from '@/lib/db';
 import { log } from '@/lib/logger';
+import { logApiUsage } from '@/lib/actions';
 
 /**
  * Trova la prima chiave API Gemini valida tra quelle disponibili nell'ambiente.
@@ -150,6 +151,9 @@ export async function safeGenerateContent(
       const client = keyIdx === 0 ? genAi : new GoogleGenAI({ apiKey });
       
       log(`[GenAI] Tentativo con modello ${model}, chiave API #${keyIdx + 1}`);
+      
+      // Throttle di 3 secondi per rispettare i limiti RPM
+      await new Promise(resolve => setTimeout(resolve, 3000));
 
       for (let retryCount = 0; retryCount < 2; retryCount++) {
         try {
@@ -158,9 +162,11 @@ export async function safeGenerateContent(
             model: model,
           });
           log(`[GenAI] Successo con modello ${model}`);
+          await logApiUsage(serviceName || 'IMPORT', 'success');
           return res;
         } catch (err: any) {
           lastError = err;
+          await logApiUsage(serviceName || 'IMPORT', 'error');
           log(`[GenAI] Errore con modello ${model}, chiave API #${keyIdx + 1}: ${err?.message || String(err)}`);
           
           let msg = '';
@@ -188,21 +194,11 @@ export async function safeGenerateContent(
                                      msg.toLowerCase().includes('overloaded') || 
                                      msg.toLowerCase().includes('unavailable');
 
-          // Se è un errore di timeout (524), forza il passaggio immediato a un modello leggero
-          if (isTimeoutError) {
-            log(`[GenAI] Rilevato timeout (524). Forza passaggio a modello light.`);
-            // Il ciclo esterno passerà al prossimo modello, e abbiamo ordinato i modelli per leggerezza
+          // Se è un errore di timeout o quota, forza il passaggio immediato a un modello leggero
+          if (isTimeoutError || isQuotaError || isHighDemandError) {
+            log(`[GenAI] Rilevato errore critico (${msg.slice(0, 30)}). Forza passaggio a modello light.`);
+            // Forza il fallback a gemini-3.1-flash-lite per il prossimo tentativo
             break; 
-          }
-
-          if ((isQuotaError || isHighDemandError) && retryCount === 0) {
-            await new Promise((resolve) => setTimeout(resolve, 1500));
-            continue;
-          }
-
-          if ((isQuotaError || isHighDemandError) && keyIdx < apiKeys.length - 1) {
-            log(`[GenAI] Chiave API #${keyIdx + 1} esaurita (503/429), passaggio alla prossima...`);
-            break;
           }
 
           break;
