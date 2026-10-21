@@ -179,10 +179,21 @@ export async function safeGenerateContent(
                                err?.status === 'RESOURCE_EXHAUSTED' ||
                                err?.code === 429;
                                
+          const isTimeoutError = msg.includes('524') || 
+                                 msg.toLowerCase().includes('timeout') ||
+                                 msg.toLowerCase().includes('deadline exceeded');
+
           const isHighDemandError = msg.includes('503') || 
                                      msg.toLowerCase().includes('high demand') || 
                                      msg.toLowerCase().includes('overloaded') || 
                                      msg.toLowerCase().includes('unavailable');
+
+          // Se è un errore di timeout (524), forza il passaggio immediato a un modello leggero
+          if (isTimeoutError) {
+            log(`[GenAI] Rilevato timeout (524). Forza passaggio a modello light.`);
+            // Il ciclo esterno passerà al prossimo modello, e abbiamo ordinato i modelli per leggerezza
+            break; 
+          }
 
           if ((isQuotaError || isHighDemandError) && retryCount === 0) {
             await new Promise((resolve) => setTimeout(resolve, 1500));
@@ -204,15 +215,17 @@ export async function safeGenerateContent(
   log(`[GenAI Error] Tutte le chiavi API esaurite: ${rawErrorMsg}`);
 
   const is503 = rawErrorMsg.includes('503') || rawErrorMsg.toLowerCase().includes('service unavailable') || rawErrorMsg.toLowerCase().includes('high demand') || rawErrorMsg.toLowerCase().includes('overloaded');
+  const isTimeout = rawErrorMsg.includes('524') || rawErrorMsg.toLowerCase().includes('timeout');
   const is429 = rawErrorMsg.includes('429') || rawErrorMsg.toLowerCase().includes('quota') || rawErrorMsg.toLowerCase().includes('resource_exhausted');
 
-  if (is503) {
-    throw new Error("Servizio IA temporaneamente occupato (Service Unavailable / 503) su tutte le chiavi API. Riprova tra qualche secondo.");
+  if (isTimeout) {
+    throw new Error("Servizio IA troppo lento (Timeout / 524). Riprova dopo aver ridotto la complessità dell'immagine.");
+  } else if (is503) {
+    throw new Error("Servizio IA temporaneamente occupato (Service Unavailable / 503). Riprova tra qualche secondo.");
   } else if (is429) {
-    throw new Error("Quota IA momentaneamente esaurita (Rate Limit / 429) su tutte le chiavi API. Riprova tra poco.");
+    throw new Error("Quota IA momentaneamente esaurita (Rate Limit / 429). Riprova tra poco.");
   }
 
-  throw new Error(rawErrorMsg || "Errore sconosciuto durante la generazione IA.");
 }
 
 /**

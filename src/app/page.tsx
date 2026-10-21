@@ -1,5 +1,5 @@
 import { CampaignManager } from '@/components/campaign-manager';
-import db from '@/lib/db';
+import db, { dbPath, getAppSetting, setAppSetting } from '@/lib/db';
 import { getSystemSettings } from '@/lib/actions';
 import { getResolvedCompendia } from '@/lib/compendium-data';
 import type { MagicItem, Monster, Spell, Skill, CampaignWithRelations, Session, Campaign, PlayerCharacter, LetterPreset, Shop, WorldLocation, Npc, Combat, StoryArc, LoreEntry, HomebrewRule } from '@/lib/types';

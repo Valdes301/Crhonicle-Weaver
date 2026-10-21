@@ -6,7 +6,7 @@ export async function GET() {
   const logPath = getLogFilePath();
   
   if (!fs.existsSync(logPath)) {
-    return new NextResponse('Log file not found', { status: 404 });
+    return new NextResponse('', { status: 200 });
   }
 
   const logContent = fs.readFileSync(logPath, 'utf8');

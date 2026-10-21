@@ -70,6 +70,7 @@ import { Label } from '@/components/ui/label';
 import { Textarea } from '@/components/ui/textarea';
 import { ImageCropperModal } from './image-cropper-modal';
 import { TokenFramerModal } from './token-framer-modal';
+import AiLogMonitor from './AiLogMonitor';
 
 interface ContentImporterNewProps {
   campaignId: string;
@@ -4077,6 +4078,13 @@ export function ContentImporterNew({ campaignId }: ContentImporterNewProps) {
           </DialogFooter>
         </DialogContent>
       </Dialog>
+
+
+      {/* Monitor Log Fisso */}
+      <div className="mt-8 border-t border-border pt-4">
+        <h2 className="text-lg font-bold mb-4">Monitoraggio Importazione</h2>
+        <AiLogMonitor />
+      </div>
 
 
       {/* Modale Miniatura */}
