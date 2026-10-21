@@ -35,7 +35,7 @@ jobs:
           context: .
           file: ./Dockerfile
           push: true
-          platforms: linux/amd64,linux/arm64
+          platforms: linux/arm64
           tags: ${{ steps.string.outputs.username }}/dnd-chronicle-weaver:latest
           cache-from: type=gha
           cache-to: type=gha,mode=max
