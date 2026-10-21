@@ -1,7 +1,7 @@
 
 'use server';
 
-import db, { dbPath, getAppSetting, setAppSetting } from '@/lib/db';
+import db, { dbPath, getAppSetting, setAppSetting, logApiUsage } from '@/lib/db';
 import { testGeminiModel, getGenAI, safeGenerateContent, getActiveFlashModel } from '@/ai/genai-client';
 import { updateGenkitActiveModel } from '@/ai/genkit';
 import { initializeCampaign as initializeCampaignFlow } from '@/ai/flows/initialize-campaign';
@@ -146,13 +146,7 @@ export async function listAssetsAction() {
 
 let aiCooldownUntil: number = 0;
 
-async function logApiUsage(service: string, status: 'success' | 'error') {
-    try {
-        db.prepare("INSERT INTO ApiUsage (service, status) VALUES (?, ?)").run(service, status);
-    } catch (e) {
-        console.error("[UsageLog] Error:", e);
-    }
-}
+
 
 const exhaustedModelsCache = new Map<string, number>();
 

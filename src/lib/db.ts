@@ -628,4 +628,12 @@ export function setAppSetting(key: string, value: string): void {
     }
 }
 
+export async function logApiUsage(service: string, status: 'success' | 'error') {
+    try {
+        db.prepare("INSERT INTO ApiUsage (service, status) VALUES (?, ?)").run(service, status);
+    } catch (e) {
+        console.error("[UsageLog] Error:", e);
+    }
+}
+
 export default db;

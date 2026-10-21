@@ -1,7 +1,7 @@
 import { GoogleGenAI } from '@google/genai';
 import { getAppSetting } from '@/lib/db';
 import { log } from '@/lib/logger';
-import { logApiUsage } from '@/lib/actions';
+import { logApiUsage } from '@/lib/db';
 
 /**
  * Trova la prima chiave API Gemini valida tra quelle disponibili nell'ambiente.
