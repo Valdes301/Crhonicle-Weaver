@@ -1,5 +1,6 @@
 import { GoogleGenAI } from '@google/genai';
 import { getAppSetting } from '@/lib/db';
+import { log } from '@/lib/logger';
 
 /**
  * Trova la prima chiave API Gemini valida tra quelle disponibili nell'ambiente.
@@ -130,66 +131,77 @@ export async function safeGenerateContent(
   serviceName?: string
 ) {
   const activeModel = getActiveFlashModel(serviceName);
-  const primaryModel = sanitizeModelName(params.model || activeModel);
+  
+  // Whitelist modelli consentiti
+  const allowedModels = ['gemini-3.8-flash', 'gemini-3.5-flash', 'gemini-3.1-flash'];
+  const primaryModel = allowedModels.includes(sanitizeModelName(params.model || activeModel)) 
+    ? sanitizeModelName(params.model || activeModel) 
+    : 'gemini-3.8-flash';
+  
+  const modelsToTry = [primaryModel, ...allowedModels.filter(m => m !== primaryModel)];
+  
   const apiKeys = getAllValidGeminiApiKeys();
 
   let lastError: any = null;
 
-  // Itera su ciascuna chiave API memorizzata disponibile (fallback sulle altre API key)
-  for (let keyIdx = 0; keyIdx < apiKeys.length; keyIdx++) {
-    const apiKey = apiKeys[keyIdx];
-    const client = keyIdx === 0 ? genAi : new GoogleGenAI({ apiKey });
+  for (const model of modelsToTry) {
+    for (let keyIdx = 0; keyIdx < apiKeys.length; keyIdx++) {
+      const apiKey = apiKeys[keyIdx];
+      const client = keyIdx === 0 ? genAi : new GoogleGenAI({ apiKey });
+      
+      log(`[GenAI] Tentativo con modello ${model}, chiave API #${keyIdx + 1}`);
 
-    // Per ciascuna chiave API, prova il modello con retry intelligenti
-    for (let retryCount = 0; retryCount < 2; retryCount++) {
-      try {
-        const res = await client.models.generateContent({
-          ...params,
-          model: primaryModel,
-        });
-        return res;
-      } catch (err: any) {
-        lastError = err;
-        let msg = '';
+      for (let retryCount = 0; retryCount < 2; retryCount++) {
         try {
-          msg = err?.message || JSON.stringify(err);
-        } catch {
-          msg = String(err);
-        }
+          const res = await client.models.generateContent({
+            ...params,
+            model: model,
+          });
+          log(`[GenAI] Successo con modello ${model}`);
+          return res;
+        } catch (err: any) {
+          lastError = err;
+          log(`[GenAI] Errore con modello ${model}, chiave API #${keyIdx + 1}: ${err?.message || String(err)}`);
+          
+          let msg = '';
+          try {
+            msg = err?.message || JSON.stringify(err);
+          } catch {
+            msg = String(err);
+          }
 
-        const isQuotaError = msg.includes('429') || 
-                             msg.toLowerCase().includes('quota') || 
-                             msg.toLowerCase().includes('too many requests') || 
-                             msg.toLowerCase().includes('resource_exhausted') || 
-                             msg.toLowerCase().includes('resource exhausted') || 
-                             msg.toLowerCase().includes('exceeded') ||
-                             err?.status === 'RESOURCE_EXHAUSTED' ||
-                             err?.code === 429;
-                             
-        const isHighDemandError = msg.includes('503') || 
-                                   msg.toLowerCase().includes('high demand') || 
-                                   msg.toLowerCase().includes('overloaded') || 
-                                   msg.toLowerCase().includes('unavailable');
+          const isQuotaError = msg.includes('429') || 
+                               msg.toLowerCase().includes('quota') || 
+                               msg.toLowerCase().includes('too many requests') || 
+                               msg.toLowerCase().includes('resource_exhausted') || 
+                               msg.toLowerCase().includes('resource exhausted') || 
+                               msg.toLowerCase().includes('exceeded') ||
+                               err?.status === 'RESOURCE_EXHAUSTED' ||
+                               err?.code === 429;
+                               
+          const isHighDemandError = msg.includes('503') || 
+                                     msg.toLowerCase().includes('high demand') || 
+                                     msg.toLowerCase().includes('overloaded') || 
+                                     msg.toLowerCase().includes('unavailable');
 
-        if ((isQuotaError || isHighDemandError) && retryCount === 0) {
-          await new Promise((resolve) => setTimeout(resolve, 1500));
-          continue;
-        }
+          if ((isQuotaError || isHighDemandError) && retryCount === 0) {
+            await new Promise((resolve) => setTimeout(resolve, 1500));
+            continue;
+          }
 
-        // Se l'errore è 503 o 429 e ci sono altre chiavi API, passa alla chiave successiva
-        if ((isQuotaError || isHighDemandError) && keyIdx < apiKeys.length - 1) {
-          console.warn(`[GenAI] Chiave API #${keyIdx + 1} occupata/esaurita (503/429), passaggio alla chiave API successiva...`);
+          if ((isQuotaError || isHighDemandError) && keyIdx < apiKeys.length - 1) {
+            log(`[GenAI] Chiave API #${keyIdx + 1} esaurita (503/429), passaggio alla prossima...`);
+            break;
+          }
+
           break;
         }
-
-        break;
       }
     }
   }
 
-  // Se tutte le chiavi API hanno fallito, errore finale
   const rawErrorMsg = lastError?.message || (typeof lastError === 'object' ? JSON.stringify(lastError) : String(lastError));
-  console.error(`[GenAI Error] Tutte le chiavi API memorizzate sono state esaurite:`, rawErrorMsg);
+  log(`[GenAI Error] Tutte le chiavi API esaurite: ${rawErrorMsg}`);
 
   const is503 = rawErrorMsg.includes('503') || rawErrorMsg.toLowerCase().includes('service unavailable') || rawErrorMsg.toLowerCase().includes('high demand') || rawErrorMsg.toLowerCase().includes('overloaded');
   const is429 = rawErrorMsg.includes('429') || rawErrorMsg.toLowerCase().includes('quota') || rawErrorMsg.toLowerCase().includes('resource_exhausted');

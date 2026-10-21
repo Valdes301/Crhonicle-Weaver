@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { catalogHandbookNewAction } from '@/lib/actions';
+import { clearLogs } from '@/lib/logger';
 import fs from 'fs';
 import path from 'path';
 
@@ -22,6 +23,7 @@ function writeLastScanDebug(info: any) {
 }
 
 export async function POST(req: NextRequest) {
+  clearLogs(); // Reset logs per ogni nuova importazione
   const startTime = Date.now();
   let body: any = null;
   try {
