@@ -244,6 +244,15 @@ async function getSystemOverride(slug: string): Promise<string | undefined> {
     }
 }
 
+const SERVICE_ENV_MAP: Record<string, string> = {
+    'STORY': 'GEMINI_API_KEY_STORY',
+    'SUMMARY': 'GEMINI_API_KEY_SUMMARY',
+    'SHOPS': 'GEMINI_API_KEY_SHOPS',
+    'WORLD': 'GEMINI_API_KEY_WORLD',
+    'EXTRACTION': 'GEMINI_API_KEY_EXTRACTION',
+    'IMPORT': 'GEMINI_API_KEY_IMPORT',
+};
+
 export async function getApiUsageStats(): Promise<{ success: boolean; data: ApiStats[] | null; error: string | null }> {
     try {
         const services = ['STORY', 'SUMMARY', 'SHOPS', 'WORLD', 'EXTRACTION', 'IMPORT'];
@@ -251,11 +260,81 @@ export async function getApiUsageStats(): Promise<{ success: boolean; data: ApiS
         for (const s of services) {
             const rpm = db.prepare("SELECT COUNT(*) as count FROM ApiUsage WHERE service = ? AND timestamp > datetime('now', '-1 minute')").get(s) as { count: number };
             const rpd = db.prepare("SELECT COUNT(*) as count FROM ApiUsage WHERE service = ? AND timestamp > datetime('now', '-24 hours')").get(s) as { count: number };
-            const lastStatus = db.prepare("SELECT status FROM ApiUsage WHERE service = ? ORDER BY timestamp DESC LIMIT 1").get(s) as { status: string };
-            stats.push({ service: s, rpm: rpm.count, rpd: rpd.count, status: lastStatus?.status || 'N/A' });
+            const lastRecord = db.prepare("SELECT status, timestamp FROM ApiUsage WHERE service = ? ORDER BY timestamp DESC LIMIT 1").get(s) as { status: string; timestamp: string } | undefined;
+
+            const envVar = SERVICE_ENV_MAP[s] || 'GEMINI_API_KEY';
+            const dedicatedVal = (process.env[envVar] || '').trim();
+            const defaultVal = (process.env.GEMINI_API_KEY || '').trim();
+            const isKeyConfigured = (dedicatedVal !== '' && dedicatedVal !== 'tua_chiave_qui' && dedicatedVal !== 'undefined') ||
+                                    (defaultVal !== '' && defaultVal !== 'tua_chiave_qui' && defaultVal !== 'undefined');
+
+            let status = 'idle';
+            if (!isKeyConfigured) {
+                status = 'missing';
+            } else if (lastRecord) {
+                if (lastRecord.status === 'success') {
+                    status = 'success';
+                } else if (lastRecord.status === 'error') {
+                    // Controlla se c'è stato un errore recente (ultimi 15 minuti)
+                    const recentError = db.prepare("SELECT COUNT(*) as count FROM ApiUsage WHERE service = ? AND status = 'error' AND timestamp > datetime('now', '-15 minutes')").get(s) as { count: number };
+                    if (recentError && recentError.count > 0) {
+                        status = 'error';
+                    } else {
+                        // Errore storico obsoleto (> 15 min): consideriamo il servizio in stato 'idle' (pronto)
+                        status = 'idle';
+                    }
+                }
+            } else {
+                status = 'idle';
+            }
+
+            stats.push({ service: s, rpm: rpm.count, rpd: rpd.count, status });
         }
         return actionResponse(stats);
     } catch (e: any) { return actionResponse(null, e.message); }
+}
+
+export async function testServiceApiKeyAction(serviceName: string): Promise<{ success: boolean; data: { service: string; latencyMs: number; model: string; message: string } | null; error: string | null }> {
+    const sName = serviceName.toUpperCase();
+    const envKey = SERVICE_ENV_MAP[sName] || 'GEMINI_API_KEY';
+    const startTime = Date.now();
+    try {
+        const client = getGenAI(envKey);
+        const modelName = getActiveFlashModel(sName);
+        await client.models.generateContent({
+            model: modelName,
+            contents: 'Rispondi esclusivamente con "OK".',
+            config: {
+                maxOutputTokens: 5,
+                temperature: 0.1,
+            },
+        });
+        const latencyMs = Date.now() - startTime;
+        await logApiUsage(sName, 'success');
+        return actionResponse({
+            service: sName,
+            latencyMs,
+            model: modelName,
+            message: `Servizio ${sName} testato con successo!`,
+        });
+    } catch (err: any) {
+        const latencyMs = Date.now() - startTime;
+        await logApiUsage(sName, 'error');
+        return actionResponse(null, err?.message || "Errore durante il test di connessione con l'API Gemini.");
+    }
+}
+
+export async function clearApiUsageErrorsAction(serviceName?: string): Promise<{ success: boolean; data: { success: boolean } | null; error: string | null }> {
+    try {
+        if (serviceName) {
+            db.prepare("DELETE FROM ApiUsage WHERE service = ? AND status = 'error'").run(serviceName.toUpperCase());
+        } else {
+            db.prepare("DELETE FROM ApiUsage WHERE status = 'error'").run();
+        }
+        return actionResponse({ success: true });
+    } catch (e: any) {
+        return actionResponse(null, e.message);
+    }
 }
 
 export async function getSystemStatus() {
@@ -1560,7 +1639,7 @@ ${override ? `Istruzioni custom: ${override}` : ''}`;
                 }
             });
 
-            const text = response.text || '{}';
+            const text = (response && typeof response.text === 'string') ? response.text : (response?.text || '{}');
             console.log("DEBUG: RAW RESPONSE FROM GEMINI:", text.substring(0, 300) + "...");
             try {
                 const dataDir = path.join(process.cwd(), 'data');

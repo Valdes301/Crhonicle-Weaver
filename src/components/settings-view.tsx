@@ -55,12 +55,62 @@ export function SettingsView({ campaignId }: { campaignId: string }) {
     const [pinConfigData, setPinConfigData] = useState<any>(null);
     const [playerMode, setPlayerMode] = useState<boolean>(false);
     const [isOptimizing, setIsOptimizing] = useState(false);
+    const [testingService, setTestingService] = useState<string | null>(null);
+    const [isClearingErrors, setIsClearingErrors] = useState(false);
     const [optimizationResult, setOptimizationResult] = useState<{
         sizeBefore: number;
         sizeAfter: number;
         spaceSaved: number;
         optimizedAt: string;
     } | null>(null);
+
+    const handleTestService = async (serviceName: string) => {
+        setTestingService(serviceName);
+        try {
+            const res = await actions.testServiceApiKeyAction(serviceName);
+            if (res.success && res.data) {
+                toast({
+                    title: `Servizio ${serviceName} Operativo!`,
+                    description: `${res.data.message} Latenza: ${res.data.latencyMs}ms (Modello: ${res.data.model})`,
+                });
+                const statsRes = await actions.getApiUsageStats();
+                if (statsRes.success && statsRes.data) setApiStats(statsRes.data);
+            } else {
+                throw new Error(res.error || "Impossibile completare il test del servizio.");
+            }
+        } catch (err: any) {
+            toast({
+                variant: 'destructive',
+                title: `Errore Test ${serviceName}`,
+                description: err.message,
+            });
+            const statsRes = await actions.getApiUsageStats();
+            if (statsRes.success && statsRes.data) setApiStats(statsRes.data);
+        } finally {
+            setTestingService(null);
+        }
+    };
+
+    const handleClearApiErrors = async () => {
+        setIsClearingErrors(true);
+        try {
+            const res = await actions.clearApiUsageErrorsAction();
+            if (res.success) {
+                toast({
+                    title: "Storico Errori Azzerato",
+                    description: "Tutti gli errori storici obsoleti sono stati rimossi dal database.",
+                });
+                const statsRes = await actions.getApiUsageStats();
+                if (statsRes.success && statsRes.data) setApiStats(statsRes.data);
+            } else {
+                throw new Error(res.error || "Impossibile azzerare gli errori.");
+            }
+        } catch (err: any) {
+            toast({ variant: 'destructive', title: "Errore Reset Errori", description: err.message });
+        } finally {
+            setIsClearingErrors(false);
+        }
+    };
 
     const handleOptimizeDatabase = async () => {
         setIsOptimizing(true);
@@ -604,10 +654,23 @@ export function SettingsView({ campaignId }: { campaignId: string }) {
 
             {/* MONITORAGGIO QUOTE API */}
             <div className="space-y-4">
-                <div className="flex items-center justify-between border-b pb-2">
+                <div className="flex flex-col sm:flex-row sm:items-center justify-between border-b pb-2 gap-2">
                     <h3 className="font-headline text-xl uppercase tracking-widest flex items-center gap-2">
                         <BarChart3 className="h-5 w-5 text-primary" /> Analitica Risorse IA
                     </h3>
+                    <div className="flex items-center gap-2">
+                        <Button
+                            variant="outline"
+                            size="sm"
+                            disabled={isClearingErrors}
+                            onClick={handleClearApiErrors}
+                            className="h-7 text-[11px] gap-1.5 uppercase font-bold text-muted-foreground hover:text-foreground"
+                            title="Cancella tutti gli errori registrati in cronologia per resettare gli stati delle chiavi"
+                        >
+                            {isClearingErrors ? <Loader2 className="h-3 w-3 animate-spin" /> : <Trash2 className="h-3 w-3 text-destructive" />}
+                            Azzera Errori Storici
+                        </Button>
+                    </div>
                 </div>
                 
                 <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
@@ -615,15 +678,51 @@ export function SettingsView({ campaignId }: { campaignId: string }) {
                         const rpmPerc = Math.min(100, (stat.rpm / 15) * 100);
                         const rpdPerc = Math.min(100, (stat.rpd / 1500) * 100);
                         const isHighUsage = rpmPerc > 80 || rpdPerc > 80;
+                        const isTesting = testingService === stat.service;
 
                         return (
                             <Card key={stat.service} className={cn("bg-muted/10 border-border/50", isHighUsage && "border-amber-500/40 bg-amber-500/5")}>
                                 <CardHeader className="p-4 pb-2">
-                                    <div className="flex justify-between items-center">
+                                    <div className="flex justify-between items-center gap-2">
                                         <CardTitle className="text-[10px] font-bold uppercase tracking-wider text-muted-foreground">{stat.service}</CardTitle>
-                                        <Badge variant={stat.status === 'success' ? 'default' : 'destructive'} className="h-4 text-[8px] uppercase">
-                                            {stat.status === 'success' ? 'Attivo' : 'Errore'}
-                                        </Badge>
+                                        <div className="flex items-center gap-1.5">
+                                            <Button
+                                                variant="ghost"
+                                                size="sm"
+                                                disabled={isTesting}
+                                                onClick={() => handleTestService(stat.service)}
+                                                className="h-5 px-1.5 text-[9px] gap-1 hover:bg-primary/20 text-muted-foreground hover:text-foreground font-semibold"
+                                                title={`Invia un ping di test del modello per il servizio ${stat.service}`}
+                                            >
+                                                {isTesting ? (
+                                                    <Loader2 className="h-2.5 w-2.5 animate-spin text-primary" />
+                                                ) : (
+                                                    <Zap className="h-2.5 w-2.5 text-amber-400" />
+                                                )}
+                                                <span>Testa</span>
+                                            </Button>
+
+                                            {stat.status === 'success' && (
+                                                <Badge variant="default" className="h-4 text-[8px] uppercase bg-emerald-600 hover:bg-emerald-500">
+                                                    Attivo
+                                                </Badge>
+                                            )}
+                                            {stat.status === 'error' && (
+                                                <Badge variant="destructive" className="h-4 text-[8px] uppercase">
+                                                    Errore
+                                                </Badge>
+                                            )}
+                                            {stat.status === 'missing' && (
+                                                <Badge variant="secondary" className="h-4 text-[8px] uppercase bg-amber-500/20 text-amber-300 border border-amber-500/30">
+                                                    Assente
+                                                </Badge>
+                                            )}
+                                            {stat.status !== 'success' && stat.status !== 'error' && stat.status !== 'missing' && (
+                                                <Badge variant="outline" className="h-4 text-[8px] uppercase text-muted-foreground">
+                                                    Pronto
+                                                </Badge>
+                                            )}
+                                        </div>
                                     </div>
                                 </CardHeader>
                                 <CardContent className="p-4 pt-0 space-y-4">

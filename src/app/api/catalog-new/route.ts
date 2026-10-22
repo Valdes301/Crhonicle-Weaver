@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { catalogHandbookNewAction } from '@/lib/actions';
 import { clearLogs } from '@/lib/logger';
+import { abortActiveAiOperations } from '@/ai/genai-client';
 import fs from 'fs';
 import path from 'path';
 
@@ -23,11 +24,22 @@ function writeLastScanDebug(info: any) {
 }
 
 export async function POST(req: NextRequest) {
+  // Supporto immediato ad action=abort
+  const actionParam = req.nextUrl.searchParams.get('action');
+  if (actionParam === 'abort') {
+    abortActiveAiOperations();
+    return NextResponse.json({ success: true, message: "Operazioni IA interrotte immediatamente." });
+  }
+
   clearLogs(); // Reset logs per ogni nuova importazione
   const startTime = Date.now();
   let body: any = null;
   try {
     body = await req.json();
+    if (body?.abort) {
+      abortActiveAiOperations();
+      return NextResponse.json({ success: true, message: "Operazioni IA interrotte immediatamente." });
+    }
     const res = await catalogHandbookNewAction(body);
     const durationSec = Number(((Date.now() - startTime) / 1000).toFixed(2));
 
@@ -98,4 +110,9 @@ export async function GET() {
   } catch (err: any) {
     return NextResponse.json({ exists: false, error: err?.message }, { status: 500 });
   }
+}
+
+export async function DELETE() {
+  abortActiveAiOperations();
+  return NextResponse.json({ success: true, message: "Operazioni IA interrotte immediatamente." });
 }

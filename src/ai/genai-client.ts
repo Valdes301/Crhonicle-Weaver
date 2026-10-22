@@ -123,6 +123,23 @@ export function getActiveFlashModel(serviceName?: string): string {
  */
 export const DEFAULT_FLASH_MODEL = 'gemini-3.8-flash';
 
+let activeOperationsAbortFlag = false;
+
+/**
+ * Interrompe immediatamente tutte le operazioni IA in corso lato server.
+ */
+export function abortActiveAiOperations() {
+  activeOperationsAbortFlag = true;
+  log(`[GenAI] Ricevuto segnale di abort immediato da parte dell'utente.`);
+  setTimeout(() => {
+    activeOperationsAbortFlag = false;
+  }, 4000);
+}
+
+export function isAiOperationAborted(): boolean {
+  return activeOperationsAbortFlag;
+}
+
 /**
  * Esegue generateContent con fallback e retries intelligenti sui modelli attivi supportati.
  */
@@ -131,6 +148,10 @@ export async function safeGenerateContent(
   params: Parameters<GoogleGenAI['models']['generateContent']>[0],
   serviceName?: string
 ) {
+  if (isAiOperationAborted()) {
+    throw new Error("Operazione IA interrotta dall'utente.");
+  }
+
   const activeModel = getActiveFlashModel(serviceName);
   
   // Whitelist modelli consentiti
@@ -140,75 +161,88 @@ export async function safeGenerateContent(
     : 'gemini-3.8-flash';
   
   const modelsToTry = [primaryModel, ...allowedModels.filter(m => m !== primaryModel)];
-  
   const apiKeys = getAllValidGeminiApiKeys();
 
   let lastError: any = null;
+  let totalAttempts = 0;
+  const MAX_TOTAL_ATTEMPTS = 3; // Limite massimo di tentativi totali per singola richiesta
+  let consecutiveQuotaErrors = 0;
 
   for (const model of modelsToTry) {
+    if (isAiOperationAborted()) {
+      throw new Error("Operazione IA interrotta dall'utente.");
+    }
+    if (totalAttempts >= MAX_TOTAL_ATTEMPTS) {
+      break;
+    }
+
     for (let keyIdx = 0; keyIdx < apiKeys.length; keyIdx++) {
+      if (isAiOperationAborted()) {
+        throw new Error("Operazione IA interrotta dall'utente.");
+      }
+      if (totalAttempts >= MAX_TOTAL_ATTEMPTS) {
+        break;
+      }
+      // Se abbiamo già riscontrato 2 errori 429 di quota consecutivi, interrompi il ciclo (progetto saturo)
+      if (consecutiveQuotaErrors >= 2) {
+        log(`[GenAI Circuit Breaker] Rilevati molteplici errori di quota (429). Interruzione a cascata per proteggere le risorse.`);
+        break;
+      }
+
+      totalAttempts++;
       const apiKey = apiKeys[keyIdx];
       const client = keyIdx === 0 ? genAi : new GoogleGenAI({ apiKey });
       
-      log(`[GenAI] Tentativo con modello ${model}, chiave API #${keyIdx + 1}`);
+      log(`[GenAI] Tentativo ${totalAttempts}/${MAX_TOTAL_ATTEMPTS} con modello ${model}, chiave API #${keyIdx + 1}`);
       
-      // Throttle di 3 secondi per rispettare i limiti RPM
-      await new Promise(resolve => setTimeout(resolve, 3000));
+      // Throttle reattivo: attesa fino a 3 secondi ma verificabile istante per istante contro l'abort
+      for (let waited = 0; waited < 3000; waited += 200) {
+        if (isAiOperationAborted()) {
+          throw new Error("Operazione IA interrotta dall'utente.");
+        }
+        await new Promise(resolve => setTimeout(resolve, 200));
+      }
 
-      for (let retryCount = 0; retryCount < 2; retryCount++) {
+      try {
+        const res = await client.models.generateContent({
+          ...params,
+          model: model,
+        });
+        log(`[GenAI] Successo con modello ${model}`);
+        await logApiUsage(serviceName || 'IMPORT', 'success');
+        return res;
+      } catch (err: any) {
+        lastError = err;
+        await logApiUsage(serviceName || 'IMPORT', 'error');
+        log(`[GenAI] Errore con modello ${model}, chiave API #${keyIdx + 1}: ${err?.message || String(err)}`);
+        
+        let msg = '';
         try {
-          const res = await client.models.generateContent({
-            ...params,
-            model: model,
-          });
-          log(`[GenAI] Successo con modello ${model}`);
-          await logApiUsage(serviceName || 'IMPORT', 'success');
-          return res;
-        } catch (err: any) {
-          lastError = err;
-          await logApiUsage(serviceName || 'IMPORT', 'error');
-          log(`[GenAI] Errore con modello ${model}, chiave API #${keyIdx + 1}: ${err?.message || String(err)}`);
-          
-          let msg = '';
-          try {
-            msg = err?.message || JSON.stringify(err);
-          } catch {
-            msg = String(err);
-          }
+          msg = err?.message || JSON.stringify(err);
+        } catch {
+          msg = String(err);
+        }
 
-          const isQuotaError = msg.includes('429') || 
-                               msg.toLowerCase().includes('quota') || 
-                               msg.toLowerCase().includes('too many requests') || 
-                               msg.toLowerCase().includes('resource_exhausted') || 
-                               msg.toLowerCase().includes('resource exhausted') || 
-                               msg.toLowerCase().includes('exceeded') ||
-                               err?.status === 'RESOURCE_EXHAUSTED' ||
-                               err?.code === 429;
-                               
-          const isTimeoutError = msg.includes('524') || 
-                                 msg.toLowerCase().includes('timeout') ||
-                                 msg.toLowerCase().includes('deadline exceeded');
+        const isQuotaError = msg.includes('429') || 
+                             msg.toLowerCase().includes('quota') || 
+                             msg.toLowerCase().includes('too many requests') || 
+                             msg.toLowerCase().includes('resource_exhausted') || 
+                             msg.toLowerCase().includes('resource exhausted') || 
+                             msg.toLowerCase().includes('exceeded') ||
+                             err?.status === 'RESOURCE_EXHAUSTED' ||
+                             err?.code === 429;
 
-          const isHighDemandError = msg.includes('503') || 
-                                     msg.toLowerCase().includes('high demand') || 
-                                     msg.toLowerCase().includes('overloaded') || 
-                                     msg.toLowerCase().includes('unavailable');
-
-          // Se è un errore di timeout o quota, forza il passaggio immediato a un modello leggero
-          if (isTimeoutError || isQuotaError || isHighDemandError) {
-            log(`[GenAI] Rilevato errore critico (${msg.slice(0, 30)}). Forza passaggio a modello light.`);
-            // Forza il fallback a gemini-3.1-flash-lite per il prossimo tentativo
-            break; 
-          }
-
-          break;
+        if (isQuotaError) {
+          consecutiveQuotaErrors++;
+        } else {
+          consecutiveQuotaErrors = 0;
         }
       }
     }
   }
 
   const rawErrorMsg = lastError?.message || (typeof lastError === 'object' ? JSON.stringify(lastError) : String(lastError));
-  log(`[GenAI Error] Tutte le chiavi API esaurite: ${rawErrorMsg}`);
+  log(`[GenAI Error] Tutti i tentativi esauriti (${totalAttempts}/${MAX_TOTAL_ATTEMPTS}): ${rawErrorMsg}`);
 
   const is503 = rawErrorMsg.includes('503') || rawErrorMsg.toLowerCase().includes('service unavailable') || rawErrorMsg.toLowerCase().includes('high demand') || rawErrorMsg.toLowerCase().includes('overloaded');
   const isTimeout = rawErrorMsg.includes('524') || rawErrorMsg.toLowerCase().includes('timeout');
@@ -222,6 +256,8 @@ export async function safeGenerateContent(
     throw new Error("Quota IA momentaneamente esaurita (Rate Limit / 429). Riprova tra poco.");
   }
 
+  // Garantisce che venga SEMPRE sollevata un'eccezione esplicita e non venga mai ritornato undefined
+  throw new Error(rawErrorMsg || "Tutti i tentativi con il modello IA sono falliti.");
 }
 
 /**

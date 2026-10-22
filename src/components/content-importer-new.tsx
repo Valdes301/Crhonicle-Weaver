@@ -673,6 +673,18 @@ export function ContentImporterNew({ campaignId }: ContentImporterNewProps) {
   const fileInputRef = useRef<HTMLInputElement>(null);
   const resultsRef = useRef<HTMLDivElement>(null);
   const isAbortedRef = useRef<boolean>(false);
+  const currentAbortControllerRef = useRef<AbortController | null>(null);
+
+  // Interruzione immediata di qualsiasi richiesta server residua allo smontaggio del componente
+  useEffect(() => {
+    return () => {
+      isAbortedRef.current = true;
+      if (currentAbortControllerRef.current) {
+        try { currentAbortControllerRef.current.abort(); } catch {}
+      }
+      fetch('/api/catalog-new?action=abort', { method: 'POST' }).catch(() => {});
+    };
+  }, []);
 
   // Controllo bozza salvata all'avvio
   useEffect(() => {
@@ -1151,6 +1163,10 @@ export function ContentImporterNew({ campaignId }: ContentImporterNewProps) {
     ];
 
     while (attempt < maxAttempts) {
+      if (isAbortedRef.current) {
+        return { success: false, data: null, error: "Scansione interrotta dall'utente." };
+      }
+
       attempt++;
       const currentAttemptModel = modelSequence[(attempt - 1) % modelSequence.length];
       setActiveModelInUse(currentAttemptModel);
@@ -1168,12 +1184,22 @@ export function ContentImporterNew({ campaignId }: ContentImporterNewProps) {
           addActivityLog(`${stepLabel ? stepLabel + ': ' : ''}Invio dati all'IA (${currentAttemptModel})...`, 'info');
         }
 
+        const controller = new AbortController();
+        currentAbortControllerRef.current = controller;
+
         const response = await fetch('/api/catalog-new', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify(inputParams),
+          signal: controller.signal,
         });
         
+        currentAbortControllerRef.current = null;
+
+        if (isAbortedRef.current) {
+          return { success: false, data: null, error: "Scansione interrotta dall'utente." };
+        }
+
         const rawText = await response.text();
         let res: any = null;
         try {
@@ -1209,6 +1235,11 @@ export function ContentImporterNew({ campaignId }: ContentImporterNewProps) {
           error: res.error || "Servizio IA temporaneamente occupato."
         };
       } catch (err: any) {
+        currentAbortControllerRef.current = null;
+        if (isAbortedRef.current || err?.name === 'AbortError') {
+          return { success: false, data: null, error: "Scansione interrotta dall'utente." };
+        }
+
         const durationSec = ((Date.now() - reqStart) / 1000).toFixed(1);
         const errMsg = String(err?.message || err || '');
         addActivityLog(`${stepLabel ? stepLabel + ': ' : ''}Disconnessione o timeout (${durationSec}s): ${errMsg}`, 'warn');
@@ -1832,10 +1863,18 @@ export function ContentImporterNew({ campaignId }: ContentImporterNewProps) {
 
   const handleStopProcessing = () => {
     isAbortedRef.current = true;
+    if (currentAbortControllerRef.current) {
+      try { currentAbortControllerRef.current.abort(); } catch {}
+      currentAbortControllerRef.current = null;
+    }
+    // Segnala immediatamente al server di troncare qualsiasi iterazione IA attiva
+    fetch('/api/catalog-new?action=abort', { method: 'POST' }).catch(() => {});
+
     setIsProcessing(false);
     setCurrentProcessingIndex(null);
-    setCurrentProgressText('Scansione interrotta dall\'utente. I contenuti finora estratti sono stati preservati.');
-    toast({ title: "Scansione Interrotta", description: "Tutti i mostri e gli elementi estratti finora sono disponibili nella scheda qui sotto." });
+    setCurrentProgressText('Scansione interrotta dall\'utente. I processi in background sono stati terminati e i contenuti estratti sono preservati.');
+    addActivityLog("Scansione interrotta dall'utente. Tutti i processi server sono stati fermati.", "warn");
+    toast({ title: "Scansione Interrotta", description: "Tutti i processi server sono stati fermati e gli elementi estratti finora sono stati preservati." });
   };
 
   // Salvataggio Singolo per categoria
