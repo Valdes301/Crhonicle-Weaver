@@ -207,11 +207,8 @@ interface QueueItem {
 }
 
 const RECOMMENDED_MODELS = [
-  { id: 'gemini-3.1-flash', label: 'Gemini 3.1 Flash', badge: 'Consigliato', desc: 'Modello principale 3.1 ad alte prestazioni per layout e analisi visiva' },
-  { id: 'gemini-3.1-flash-lite', label: 'Gemini 3.1 Flash Lite', badge: '3.1 Lite', desc: 'Modello 3.1 ultra-leggero e reattivo per scansioni rapide' },
-  { id: 'gemini-2.5-flash', label: 'Gemini 2.5 Flash', badge: '2.5 Flash', desc: 'Modello 2.5 stabile ed efficiente per estrazione contenuti' },
-  { id: 'gemini-2.5-flash-lite', label: 'Gemini 2.5 Flash Lite', badge: '2.5 Lite', desc: 'Modello 2.5 leggero a consumo token ridotto' },
-  { id: 'gemini-2.5-pro', label: 'Gemini 2.5 Pro', badge: '2.5 Pro', desc: 'Massima precisione logica per testi complessi' },
+  { id: 'gemini-3.1-flash-lite', label: 'Gemini 3.1 Flash Lite', badge: 'Consigliato', desc: 'Modello Flash Lite ottimizzato per scansioni rapide' },
+  { id: 'gemini-3.8-flash', label: 'Gemini 3.8 Flash', badge: '3.8 Flash', desc: 'Modello principale Flash ad alte prestazioni' },
 ];
 
 export function ContentImporterNew({ campaignId }: ContentImporterNewProps) {
@@ -220,14 +217,14 @@ export function ContentImporterNew({ campaignId }: ContentImporterNewProps) {
   // Opzioni di Scansione
   const [sourceManual, setSourceManual] = useState<ManualSource>('auto');
   const [targetContentType, setTargetContentType] = useState<TargetFilter>('all');
-  const [selectedModel, setSelectedModel] = useState<string>('gemini-3.1-flash');
+  const [selectedModel, setSelectedModel] = useState<string>('gemini-3.1-flash-lite');
   
   // Coda e Stato di Elaborazione
   const [queue, setQueue] = useState<QueueItem[]>([]);
   const [isProcessing, setIsProcessing] = useState<boolean>(false);
   const [currentProcessingIndex, setCurrentProcessingIndex] = useState<number | null>(null);
   const [currentProgressText, setCurrentProgressText] = useState<string>('');
-  const [activeModelInUse, setActiveModelInUse] = useState<string>('gemini-3.1-flash');
+  const [activeModelInUse, setActiveModelInUse] = useState<string>('gemini-3.1-flash-lite');
   const [pageProgressPercent, setPageProgressPercent] = useState<number>(0);
   const [pageProgressDetails, setPageProgressDetails] = useState<{ current: number; total: number; fileName: string } | null>(null);
 

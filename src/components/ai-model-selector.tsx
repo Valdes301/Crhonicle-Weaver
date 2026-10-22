@@ -37,51 +37,27 @@ interface PresetModel {
 
 const DEFAULT_MODELS: PresetModel[] = [
   {
-    id: 'gemini-3.1-flash',
-    label: 'Gemini 3.1 Flash',
+    id: 'gemini-3.1-flash-lite',
+    label: 'Gemini 3.1 Flash Lite',
     category: 'recommended',
-    description: 'Modello principale 3.1 raccomandato. Elevata intelligenza, precisione e prestazioni ottimali per D&D.',
-    badge: '3.1 Flash',
+    description: 'Modello Flash Lite ottimizzato per scansioni rapide.',
+    badge: '3.1 Lite',
     badgeVariant: 'default'
   },
   {
-    id: 'gemini-3.1-flash-lite',
-    label: 'Gemini 3.1 Flash Lite',
+    id: 'gemini-3.8-flash',
+    label: 'Gemini 3.8 Flash',
     category: 'current',
-    description: 'Modello 3.1 ultra-leggero e veloce per risposte ad altissima efficienza.',
-    badge: '3.1 Lite',
-    badgeVariant: 'outline'
-  },
-  {
-    id: 'gemini-2.5-flash',
-    label: 'Gemini 2.5 Flash',
-    category: 'current',
-    description: 'Modello 2.5 stabile ed efficiente per la generazione di contenuti.',
-    badge: '2.5 Flash',
-    badgeVariant: 'secondary'
-  },
-  {
-    id: 'gemini-2.5-flash-lite',
-    label: 'Gemini 2.5 Flash Lite',
-    category: 'current',
-    description: 'Modello 2.5 Flash Lite a basso consumo di token.',
-    badge: '2.5 Lite',
-    badgeVariant: 'outline'
-  },
-  {
-    id: 'gemini-2.5-pro',
-    label: 'Gemini 2.5 Pro',
-    category: 'current',
-    description: 'Modello 2.5 Pro avanzato per ragionamenti complessi.',
-    badge: '2.5 Pro',
+    description: 'Modello principale Flash ad alte prestazioni.',
+    badge: '3.8 Flash',
     badgeVariant: 'outline'
   }
 ];
 
 export function AiModelSelector() {
   const [models, setModels] = useState<PresetModel[]>(DEFAULT_MODELS);
-  const [activeModel, setActiveModel] = useState<string>('gemini-3.1-flash');
-  const [selectedModel, setSelectedModel] = useState<string>('gemini-3.1-flash');
+  const [activeModel, setActiveModel] = useState<string>('gemini-3.1-flash-lite');
+  const [selectedModel, setSelectedModel] = useState<string>('gemini-3.1-flash-lite');
   const [customModelInput, setCustomModelInput] = useState<string>('');
   const [source, setSource] = useState<string>('default');
   const [isLoading, setIsLoading] = useState<boolean>(true);

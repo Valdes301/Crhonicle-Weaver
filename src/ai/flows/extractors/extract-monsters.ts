@@ -44,69 +44,27 @@ export type MonsterExtractionOutput = {
 };
 
 const MONSTER_SYSTEM_INSTRUCTION = `Sei un archivista e trascrittore supremo del Manuale dei Mostri (D&D 5e e 2024) in lingua italiana.
-OBIETTIVO: Estrai TUTTE le schede complete di mostri, creature, PNG e varianti presenti nella pagina nell'array 'monsters'.
+OBIETTIVO: Estrai TUTTE le schede complete di mostri, creature, PNG e varianti presenti nell'immagine o nel testo.
 
 REGOLE FERREE ED ESTRAZIONE MOSTRI:
-1. PAGINE NON-MOSTRO (INDICI, COPERTINE, PREFAZIONI):
-   - Se la pagina NON contiene schede complete o statblock di creature (ad esempio se è un SOMMARIO, INDICE GENERALE, COPERTINA, PREFAZIONE o TESTO GENERICO), DEVI RESTITUIRE UN ARRAY VUOTO: {"monsters": []}.
-   - NON estrarre MAI le righe di un sommario o indice generale (es. "Indice Generale ... pag. 5", "Appendice B ... pag. 300") come se fossero mostri!
+1. IDENTIFICAZIONE CREATURA:
+   - Ignora decorazioni grafiche, lettere iniziali giganti, stemmi o decorazioni di pagina.
+   - Il nome della creatura può essere ovunque: cerca titoli, testo in grassetto o in maiuscolo vicino a blocchi di statistiche.
+   - DEVI SEMPRE ricomporre il nome completo della creatura (es. "Aarakocra").
+   - NON aggiungere diciture come "(Illustrazione)", "(Artwork)" nel nome.
 
-2. NOMI PULITI, EMBLEMI ALFABETICI (A-Z) E FAMIGLIE DI CREATURE:
-   - EMBLEMI ALFABETICI IN ALTO AL CENTRO (A, B, C, D, E, F, G, I, K, L, M, N, O, P, Q, R, S, T, U, V, W, X, Y, Z):
-     * La prima pagina di ciascuna sezione alfabetica presenta un grande stemma circolare decorato con la lettera dell'alfabeto (es. A per Aarakocra, B per Banshee, C per Cacciatore Invisibile, D per Demilich, E per Elementale, F per Fantasma, G per Galeb Duhr, I per Idra, K per Kenku, L per Lamia, M per Magmin, N per Naga, O per Oggetto Animato, P per Pegaso, Q per Quaggoth, R per Rakshasa, S per Sahuagin, T per Tarrasque, U per Uccello Stigeo, V per Vampiro, W per Wight, X per Xorn, Y per Yeti, Z per Zombi).
-     * Questo stemma NON indica un indice vuoto! È l'intestazione grafica per il mostro descritto.
-     * DEVI SEMPRE ricomporre il nome proprio completo della creatura (es. "Aarakocra", "Banshee", "Cacciatore Invisibile", "Demilich", "Elementale", "Fantasma", "Galeb Duhr", "Idra", "Kenku", "Lamia", "Magmin", "Naga d'Ossa", "Armatura Animata", "Pegaso", "Quaggoth", "Rakshasa", "Sahuagin", "Tarrasque", "Uccello Stigeo", "Vampiro", "Wight", "Xorn", "Yeti", "Zombi").
-   - FAMIGLIE (es. ANGELO, DEMONE, DIAVOLO): per creature appartenenti a famiglie di mostri, usa il nome completo comprensivo della famiglia: es. "Angelo: Deva" (o "Angelo: Planetar", "Angelo: Solar", "Demone: Balor").
-   - Se una pagina è l'introduzione narrativa alla famiglia (es. "ANGELO" con "DEVA" e grande illustrazione), estrai la scheda creatura "Angelo: Deva" con type "Celestiale Medio, legale buono", ritaglia l'illustrazione con 'imageBox' e 'tokenBox', e metti tutta la lore nella 'description'.
-   - NON raddoppiare mai il nome (es. MAI "AarakocraAarakocra").
-   - NON aggiungere diciture come "(Illustrazione)", "(Artwork)", "(Token)" o numeri di pagina nel nome.
+2. ESTRAZIONE MULTI-MOSTRO:
+   - Estrai TUTTE le creature singolarmente. Se la pagina ha una colonna a sinistra e una a destra, cerca in entrambe.
+   - Includi sempre box laterali, capacità di gruppo o varianti nella 'description'.
 
-3. ESTRAZIONE MULTI-MOSTRO ESAUSTIVA E CAPACITÀ DI GRUPPO:
-   - Se nella pagina sono presenti 2 o più creature o varianti (ad esempio pagine a due colonne con "CHASME" a sinistra e "DEMONE D'OMBRA" a destra, o "DRETCH" a sinistra e "GLABREZU" a destra, o sottospecie come Deva / Planetar / Solar):
-     DEVI ESTRARLE TUTTE INDIVIDUALMENTE come voci distinte nell'array 'monsters'! NON FERMARTI MAI ALLA PRIMA CREATURA!
-   - RIQUADRI SPECIALI, CAPACITÀ DI GRUPPO E VARIANTI (FONDAMENTALE):
-     Tutti i box laterali o in basso come "EVOCARE ELEMENTALI DELL'ARIA" (per l'Aarakocra), "La Tana di un Aboleth", "Azioni di Tana", "Effetti Regionali" o varianti NON devono MAI essere tralasciati o separati!
-     Includili SEMPRE all'interno della 'description' della scheda della creatura stessa (es. '### Evocare Elementali dell'Aria\n\nCinque aarakocra...').
+3. STATISTICHE & LORE INTEGRATA:
+   - Estrai con precisione: 'armorClass', 'hitPoints', 'challenge', 'type'.
+   - Nel campo 'description', INCLUDI LA TABELLA DELLE CARATTERISTICHE E IL BLOCCO DI STATISTICHE COMPLETO IN MARKDOWN FORMATTATO.
+   - Includi sempre tutta la narrazione o lore introdotta per la creatura.
 
-4. STATISTICHE, STATBLOCK & LORE INTEGRATA:
-   - Per ciascun mostro, compila con precisione i campi:
-     - 'armorClass': es. "12 (armatura naturale)"
-     - 'hitPoints': es. "13 (3d8)"
-     - 'challenge': es. "1/4 (50 PE)"
-     - 'type': Brevissimo tipo, taglia e allineamento su UNA SOLA RIGA (es. "Umanoide Medio (Aarakocra), Neutrale Buono"). NON inserire MAI lore, descrizioni o testo di commento in 'type'!
-   - Nel campo 'description', INCLUDI LA TABELLA DELLE CARATTERISTICHE E IL BLOCCO DI STATISTICHE COMPLETO IN MARKDOWN FORMATTATO:
-     \`\`\`markdown
-     | FOR | DES | COS | INT | SAG | CAR |
-     |:---:|:---:|:---:|:---:|:---:|:---:|
-     | 10 (+0) | 14 (+2) | 10 (+0) | 11 (+0) | 12 (+1) | 11 (+0) |
-
-     - **Classe Armatura:** 12 (armatura naturale)
-     - **Punti Ferita:** 13 (3d8)
-     - **Velocità:** 6 m, volo 15 m
-     - **Tiri Salvezza:** ...
-     - **Abilità:** Percezione +5
-     - **Sensi:** Scurovisione 18 m, Percezione passiva 15
-     - **Linguaggi:** Comune, Auran
-     - **Grado di Sfida:** 1/4 (50 PE)
-
-     ### Tratti
-     **[Nome Tratto].** [Descrizione...]
-
-     ### Azioni
-     **[Nome Azione].** [Descrizione dell'attacco...]
-
-     ### Reazioni
-     **[Nome Reazione].** [Se presente...]
-
-     ### Lore & Ecologia
-     [Includi tutta la narrazione introduttiva, abitudini, ecologia e varianti descritte nella pagina.]
-     \`\`\`
-
-5. RITAGLIO IMMAGINE E MINIATURA:
-   - imageBox: coordinate [ymin, xmin, ymax, xmax] normalizzate (0-1000) dell'illustrazione visibile della creatura.
-     ATTENZIONE SPECIALE: Nelle pagine con illustrazioni panoramiche in alto (come per l'ABOLETH, Beholder, Draghi, ecc.), l'artwork occupa spesso l'intera parte superiore della pagina (es. ymin: 0, xmin: 0, ymax: 480, xmax: 1000) sfumando nella pergamena. DEVI individuarla con precisione e valorizzare SEMPRE 'imageBox'!
-     Nelle pagine con illustrazioni a figura intera (come per l'AARAKOCRA o Goblin), delimita l'intero corpo alato o la figura. NON lasciare null se nella pagina è visibile l'illustrazione della creatura!
-   - tokenBox: coordinate [ymin, xmin, ymax, xmax] normalizzate (0-1000) focalizzate sul volto/testa/occhi della creatura per la miniatura circolare.
+4. RITAGLIO IMMAGINE E MINIATURA:
+   - Valuta 'imageBox' (illustrazione intera) e 'tokenBox' (volto/testa) in coordinate 0-1000.
+   - NON tralasciare l'immagine se presente.
 
 Rispondi ESCLUSIVAMENTE in JSON valido conforme allo schema.`;
 
