@@ -18,7 +18,7 @@ export default function AiLogMonitor() {
         const content = await response.text();
         setLogs(content);
       } catch (error) {
-        console.error('Errore nel recupero dei log:', error);
+        // Silenzioso in caso di temporanea disconnessione o riavvio server
       }
     };
 

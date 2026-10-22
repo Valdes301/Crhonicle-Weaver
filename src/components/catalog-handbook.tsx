@@ -37,7 +37,7 @@ export function CatalogHandbook({ campaignId }: CatalogHandbookProps) {
   const { toast } = useToast();
   const router = useRouter();
 
-  const compressImage = (dataUrl: string, maxWidth = 1000, maxHeight = 1000, quality = 0.65): Promise<string> => {
+  const compressImage = (dataUrl: string, maxWidth = 800, maxHeight = 800, quality = 0.55): Promise<string> => {
     return new Promise((resolve) => {
       const img = typeof window !== 'undefined' ? new window.Image() : null;
       if (!img) {
@@ -89,7 +89,7 @@ export function CatalogHandbook({ campaignId }: CatalogHandbookProps) {
         const rawUri = event.target?.result as string;
         if (rawUri) {
           try {
-            const compressed = await compressImage(rawUri, 1000, 1000, 0.65);
+            const compressed = await compressImage(rawUri, 800, 800, 0.55);
             setImageDataUri(compressed);
           } catch (err) {
             setImageDataUri(rawUri);

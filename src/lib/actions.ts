@@ -4693,5 +4693,45 @@ export async function catalogHandbookNewAction(input: CatalogHandbookNewInput) {
     }
 }
 
+export async function saveCustomMonsterAction(data: {
+    campaignId: string;
+    name: string;
+    type: string;
+    armorClass: string;
+    hitPoints: string;
+    challenge: string;
+    description: string;
+    imageUrl?: string;
+}) {
+    'use server';
+    try {
+        const id = randomUUID();
+        const now = new Date().toISOString();
+        const finalImageUrl = saveBase64ImageDirectly(data.imageUrl, data.name);
+
+        db.prepare(`
+            INSERT INTO Monster (id, campaignId, name, type, armorClass, hitPoints, challenge, description, imageUrl, createdAt, updatedAt)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        `).run(
+            id,
+            data.campaignId,
+            data.name,
+            data.type,
+            data.armorClass,
+            data.hitPoints,
+            data.challenge,
+            data.description,
+            finalImageUrl || null,
+            now,
+            now
+        );
+
+        return actionResponse({ success: true, id });
+    } catch (e: any) {
+        return actionResponse(null, e.message);
+    }
+}
+
+
 
 
