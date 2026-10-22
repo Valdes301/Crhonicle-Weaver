@@ -216,8 +216,8 @@ export async function safeGenerateContent(
         let timerId: any = null;
         const timeoutPromise = new Promise((_, reject) => {
           timerId = setTimeout(() => {
-            reject(new Error(`Timeout chiamata IA su modello ${model} superato (35s)`));
-          }, 35000);
+            reject(new Error(`Timeout chiamata IA su modello ${model} superato (75s)`));
+          }, 75000);
           if (timerId?.unref) timerId.unref();
         });
 
@@ -260,7 +260,7 @@ export async function safeGenerateContent(
         } else if (is503 || isTimeout) {
           // Su 503 (sovraccarico di Google) o timeout 35s, cambiare chiave per lo stesso modello è inutile.
           // Failover immediato: interrompi il ciclo di chiavi per questo modello e passa al modello successivo!
-          log(`[GenAI Failover Immediato] Modello ${model} sovraccarico o lento (${is503 ? '503 High Demand' : 'Timeout 35s'}). Passaggio immediato al modello successivo...`);
+          log(`[GenAI Failover Immediato] Modello ${model} sovraccarico o lento (${is503 ? '503 High Demand' : 'Timeout 75s'}). Passaggio immediato al modello successivo...`);
           consecutiveQuotaErrors = 0;
           break;
         } else {
