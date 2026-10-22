@@ -1184,8 +1184,8 @@ export function ContentImporterNew({ campaignId }: ContentImporterNewProps) {
 
   const FALLBACK_MODELS_ROTATION = [
     'gemini-3.8-flash',
-    'gemini-flash-latest',
-    'gemini-3.1-flash-lite',
+    'gemini-3.5-flash',
+    'gemini-3.1-flash',
     'gemini-2.5-flash',
   ];
 
@@ -1701,6 +1701,69 @@ export function ContentImporterNew({ campaignId }: ContentImporterNewProps) {
       rulesCount: processedRules.length,
       names
     };
+  };
+
+  // Importazione diretta dal file di log diagnostico temporaneo (last_scan_debug.json) nella schermata di revisione
+  const handleImportFromDebugLog = async () => {
+    if (!debugLogData) return;
+    try {
+      const rawExtracted = debugLogData.extractedData;
+      const monstersList = rawExtracted?.monsters || (debugLogData.summary?.monstersFound || []).map((m: any) => ({
+        name: m.name,
+        type: m.type || 'Creatura',
+        armorClass: m.armorClass || '',
+        hitPoints: m.hitPoints || '',
+        challenge: m.challenge || '',
+        description: m.description || `Tipo: ${m.type || 'Creatura'}\nCA: ${m.armorClass || '-'}\nPF: ${m.hitPoints || '-'}\nGS: ${m.challenge || '-'}`,
+        imageBox: m.imageBox || null,
+        tokenBox: m.tokenBox || null,
+      }));
+
+      const payload = {
+        monsters: monstersList,
+        items: rawExtracted?.items || [],
+        spells: rawExtracted?.spells || [],
+        skills: rawExtracted?.skills || [],
+        rules: rawExtracted?.rules || [],
+        pageAnalysis: debugLogData.summary?.pageAnalysis || null
+      };
+
+      // Se c'è un elemento in coda con anteprima, usalo per ritagliare token e artwork
+      let pageImage = '';
+      if (queue.length > 0 && queue[0].file) {
+        try {
+          const reader = new FileReader();
+          pageImage = await new Promise<string>((res) => {
+            reader.onload = (e) => res((e.target?.result as string) || '');
+            reader.onerror = () => res('');
+            reader.readAsDataURL(queue[0].file!);
+          });
+        } catch {}
+      } else if (queue.length > 0 && queue[0].previewUrl) {
+        pageImage = queue[0].previewUrl;
+      }
+
+      const resCounts = await processPageData(payload, pageImage);
+      setShowDebugModal(false);
+      setActiveTab('monsters');
+      toast({
+        title: "Importazione Riuscita! 🎉",
+        description: `Caricati ${resCounts.monstersCount} mostri nella schermata di revisione!`,
+      });
+
+      // Aggiorna lo stato della coda
+      setQueue(prev => prev.map(q => ({
+        ...q,
+        status: 'done' as const,
+        extractedMonstersCount: resCounts.monstersCount,
+      })));
+    } catch (e: any) {
+      toast({
+        variant: 'destructive',
+        title: "Errore Importazione",
+        description: e?.message || "Impossibile importare le schede dal log.",
+      });
+    }
   };
 
   // Riavvio immediato di un elemento specifico (Riprova / Riscansiona)
@@ -4184,7 +4247,7 @@ export function ContentImporterNew({ campaignId }: ContentImporterNewProps) {
             )}
           </div>
 
-          <DialogFooter className="pt-3 border-t border-border/80 flex items-center justify-between shrink-0">
+          <DialogFooter className="pt-3 border-t border-border/80 flex flex-wrap items-center justify-between gap-2 shrink-0">
             <Button
               variant="outline"
               size="sm"
@@ -4195,13 +4258,25 @@ export function ContentImporterNew({ campaignId }: ContentImporterNewProps) {
               <RefreshCw className={cn("h-3.5 w-3.5 mr-1.5", isLoadingDebugLog && "animate-spin")} />
               Aggiorna Log
             </Button>
-            <Button
-              size="sm"
-              onClick={() => setShowDebugModal(false)}
-              className="bg-primary text-primary-foreground font-semibold text-xs h-8"
-            >
-              Chiudi
-            </Button>
+            <div className="flex items-center gap-2">
+              {debugLogData && (debugLogData.summary?.monstersFound?.length > 0 || debugLogData.extractedData?.monsters?.length > 0) && (
+                <Button
+                  size="sm"
+                  onClick={handleImportFromDebugLog}
+                  className="bg-emerald-600 hover:bg-emerald-500 text-white font-bold text-xs h-8 shadow-sm flex items-center gap-1.5"
+                >
+                  <Check className="h-3.5 w-3.5" />
+                  Importa nella Schermata di Revisione ({debugLogData.summary?.monstersFound?.length || debugLogData.extractedData?.monsters?.length || 1})
+                </Button>
+              )}
+              <Button
+                size="sm"
+                onClick={() => setShowDebugModal(false)}
+                className="bg-primary text-primary-foreground font-semibold text-xs h-8"
+              >
+                Chiudi
+              </Button>
+            </div>
           </DialogFooter>
         </DialogContent>
       </Dialog>

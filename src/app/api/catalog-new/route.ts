@@ -53,6 +53,7 @@ export async function POST(req: NextRequest) {
       hasImage: Boolean(body?.photoDataUri),
       success: Boolean(res?.success),
       error: res?.error || null,
+      extractedData: rawData || null,
       summary: rawData ? {
         pageAnalysis: rawData.pageAnalysis || null,
         monstersFound: (rawData.monsters || []).map((m: any) => ({
@@ -61,6 +62,7 @@ export async function POST(req: NextRequest) {
           armorClass: m.armorClass,
           hitPoints: m.hitPoints,
           challenge: m.challenge,
+          description: m.description || '',
           hasImageBox: Boolean(m.imageBox),
           imageBox: m.imageBox || null,
           hasTokenBox: Boolean(m.tokenBox),

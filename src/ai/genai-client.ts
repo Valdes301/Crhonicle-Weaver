@@ -154,10 +154,12 @@ export async function safeGenerateContent(
 
   const activeModel = getActiveFlashModel(serviceName);
   
-  // Whitelist modelli consentiti
-  const allowedModels = ['gemini-3.8-flash', 'gemini-3.5-flash', 'gemini-3.1-flash'];
-  const primaryModel = allowedModels.includes(sanitizeModelName(params.model || activeModel)) 
-    ? sanitizeModelName(params.model || activeModel) 
+  // Whitelist modelli consentiti e mappatura
+  const allowedModels = ['gemini-3.8-flash', 'gemini-3.5-flash', 'gemini-3.1-flash', 'gemini-2.5-flash'];
+  const rawRequested = sanitizeModelName(params.model || activeModel);
+  const requestedModel = rawRequested === 'gemini-flash-latest' ? 'gemini-3.5-flash' : rawRequested;
+  const primaryModel = allowedModels.includes(requestedModel) 
+    ? requestedModel 
     : 'gemini-3.8-flash';
   
   const modelsToTry = [primaryModel, ...allowedModels.filter(m => m !== primaryModel)];
@@ -165,7 +167,7 @@ export async function safeGenerateContent(
 
   let lastError: any = null;
   let totalAttempts = 0;
-  const MAX_TOTAL_ATTEMPTS = 3; // Limite massimo di tentativi totali per singola richiesta
+  const MAX_TOTAL_ATTEMPTS = 5; // Fino a 5 tentativi per consentire rotazione completa tra modelli e chiavi
   let consecutiveQuotaErrors = 0;
 
   for (const model of modelsToTry) {
@@ -195,26 +197,39 @@ export async function safeGenerateContent(
       
       log(`[GenAI] Tentativo ${totalAttempts}/${MAX_TOTAL_ATTEMPTS} con modello ${model}, chiave API #${keyIdx + 1}`);
       
-      // Throttle reattivo: attesa fino a 3 secondi ma verificabile istante per istante contro l'abort
-      for (let waited = 0; waited < 3000; waited += 200) {
-        if (isAiOperationAborted()) {
-          throw new Error("Operazione IA interrotta dall'utente.");
+      // Breve pausa solo tra tentativi successivi al primo
+      if (totalAttempts > 1) {
+        for (let waited = 0; waited < 800; waited += 100) {
+          if (isAiOperationAborted()) {
+            throw new Error("Operazione IA interrotta dall'utente.");
+          }
+          await new Promise(resolve => setTimeout(resolve, 100));
         }
-        await new Promise(resolve => setTimeout(resolve, 200));
       }
 
       try {
-        const res = await client.models.generateContent({
+        const generatePromise = client.models.generateContent({
           ...params,
           model: model,
         });
+
+        let timerId: any = null;
+        const timeoutPromise = new Promise((_, reject) => {
+          timerId = setTimeout(() => {
+            reject(new Error(`Timeout chiamata IA su modello ${model} superato (35s)`));
+          }, 35000);
+          if (timerId?.unref) timerId.unref();
+        });
+
+        const res = await Promise.race([generatePromise, timeoutPromise]) as any;
+        clearTimeout(timerId);
+
         log(`[GenAI] Successo con modello ${model}`);
         await logApiUsage(serviceName || 'IMPORT', 'success');
         return res;
       } catch (err: any) {
         lastError = err;
         await logApiUsage(serviceName || 'IMPORT', 'error');
-        log(`[GenAI] Errore con modello ${model}, chiave API #${keyIdx + 1}: ${err?.message || String(err)}`);
         
         let msg = '';
         try {
@@ -223,6 +238,13 @@ export async function safeGenerateContent(
           msg = String(err);
         }
 
+        log(`[GenAI] Errore con modello ${model}, chiave API #${keyIdx + 1}: ${msg}`);
+        
+        const is503 = msg.includes('503') || 
+                      msg.toLowerCase().includes('high demand') || 
+                      msg.toLowerCase().includes('unavailable') || 
+                      msg.toLowerCase().includes('overloaded');
+        const isTimeout = msg.toLowerCase().includes('timeout');
         const isQuotaError = msg.includes('429') || 
                              msg.toLowerCase().includes('quota') || 
                              msg.toLowerCase().includes('too many requests') || 
@@ -234,6 +256,13 @@ export async function safeGenerateContent(
 
         if (isQuotaError) {
           consecutiveQuotaErrors++;
+          // Continua provando la prossima chiave API per la quota
+        } else if (is503 || isTimeout) {
+          // Su 503 (sovraccarico di Google) o timeout 35s, cambiare chiave per lo stesso modello è inutile.
+          // Failover immediato: interrompi il ciclo di chiavi per questo modello e passa al modello successivo!
+          log(`[GenAI Failover Immediato] Modello ${model} sovraccarico o lento (${is503 ? '503 High Demand' : 'Timeout 35s'}). Passaggio immediato al modello successivo...`);
+          consecutiveQuotaErrors = 0;
+          break;
         } else {
           consecutiveQuotaErrors = 0;
         }
