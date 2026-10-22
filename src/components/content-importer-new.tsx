@@ -1021,11 +1021,45 @@ export function ContentImporterNew({ campaignId }: ContentImporterNewProps) {
     });
   };
 
-  const renderPdfPage = async (pdfDoc: any, pageNum: number, maxWidth = 1200): Promise<string> => {
+  const isCanvasBlank = (ctx: CanvasRenderingContext2D, width: number, height: number): boolean => {
+    try {
+      const sampleCols = 24;
+      const sampleRows = 28;
+      const stepX = Math.floor(width / (sampleCols + 1));
+      const stepY = Math.floor(height / (sampleRows + 1));
+      let darkPixelCount = 0;
+      let minLum = 255;
+      let maxLum = 0;
+
+      for (let r = 1; r <= sampleRows; r++) {
+        for (let c = 1; c <= sampleCols; c++) {
+          const x = c * stepX;
+          const y = r * stepY;
+          const pixel = ctx.getImageData(x, y, 1, 1).data;
+          // Luminanza percepita (BT.601)
+          const lum = 0.299 * pixel[0] + 0.587 * pixel[1] + 0.114 * pixel[2];
+          if (lum < minLum) minLum = lum;
+          if (lum > maxLum) maxLum = lum;
+          if (lum < 205) {
+            darkPixelCount++;
+          }
+        }
+      }
+      // Se non ci sono pixel scuri e il contrasto tra chiaro e scuro è minimo, la pagina è vuota/bianca
+      if (darkPixelCount < 3 && (maxLum - minLum) < 35) {
+        return true;
+      }
+      return false;
+    } catch {
+      return false;
+    }
+  };
+
+  const renderPdfPage = async (pdfDoc: any, pageNum: number, maxWidth = 1000): Promise<{ dataUrl: string; isBlank: boolean }> => {
     const page = await pdfDoc.getPage(pageNum);
     const unscaledViewport = page.getViewport({ scale: 1.0 });
-    // Scala bilanciata per D&D OCR veloce ma nitido (larghezza ~1200px)
-    const scale = Math.max(1.3, Math.min(2.1, maxWidth / unscaledViewport.width));
+    // Scala bilanciata per D&D OCR veloce ma nitido (~1000px per ottimizzare token visivi ed evitare overflow)
+    const scale = Math.max(1.1, Math.min(1.8, maxWidth / unscaledViewport.width));
     const viewport = page.getViewport({ scale });
     
     const canvas = document.createElement('canvas');
@@ -1035,7 +1069,9 @@ export function ContentImporterNew({ campaignId }: ContentImporterNewProps) {
     if (!ctx) throw new Error("Contesto Canvas non disponibile");
     
     await page.render({ canvasContext: ctx, viewport }).promise;
-    return canvas.toDataURL('image/jpeg', 0.82);
+    const isBlank = isCanvasBlank(ctx, canvas.width, canvas.height);
+    const dataUrl = canvas.toDataURL('image/jpeg', 0.82);
+    return { dataUrl, isBlank };
   };
 
   // Aggiunta file alla coda
@@ -1224,6 +1260,22 @@ export function ContentImporterNew({ campaignId }: ContentImporterNewProps) {
         
         addActivityLog(`${stepLabel ? stepLabel + ': ' : ''}Risposta non valida (${durationSec}s): ${res.error || 'Nessun dato'}`, 'warn');
 
+        // 5. Smart 429 Backoff & Resume:
+        const errText = String(res?.error || rawText || '');
+        const isQuota429 = response.status === 429 || /429|quota|exhausted|rate.?limit|too many requests/i.test(errText);
+        if (isQuota429 && !isAbortedRef.current) {
+          addActivityLog(`${stepLabel ? stepLabel + ': ' : ''}Limite quota/RPM rilevato (429/Resource Exhausted). Pausa di sicurezza di 15s per rigenerare i token...`, 'warn');
+          for (let sec = 15; sec > 0; sec--) {
+            if (isAbortedRef.current) break;
+            setCurrentProgressText(`${stepLabel ? stepLabel + ' — ' : ''}Attesa anticollisione quota (429): ripresa tra ${sec}s...`);
+            await new Promise(r => setTimeout(r, 1000));
+          }
+          if (!isAbortedRef.current) {
+            addActivityLog(`${stepLabel ? stepLabel + ': ' : ''}Quota ripristinata! Nuovo tentativo per la pagina in corso...`, 'speed');
+            continue;
+          }
+        }
+
         if (attempt < maxAttempts && !isAbortedRef.current) {
           setCurrentProgressText(`${stepLabel ? stepLabel + ' — ' : ''}Passaggio a modello successivo tra 1s (${attempt + 1}/${maxAttempts})...`);
           await new Promise(r => setTimeout(r, 1000));
@@ -1243,6 +1295,20 @@ export function ContentImporterNew({ campaignId }: ContentImporterNewProps) {
         const durationSec = ((Date.now() - reqStart) / 1000).toFixed(1);
         const errMsg = String(err?.message || err || '');
         addActivityLog(`${stepLabel ? stepLabel + ': ' : ''}Disconnessione o timeout (${durationSec}s): ${errMsg}`, 'warn');
+
+        const isQuota429 = /429|quota|exhausted|rate.?limit|too many requests/i.test(errMsg);
+        if (isQuota429 && !isAbortedRef.current) {
+          addActivityLog(`${stepLabel ? stepLabel + ': ' : ''}Limite quota/RPM rilevato (429/Resource Exhausted). Pausa di sicurezza di 15s per rigenerare i token...`, 'warn');
+          for (let sec = 15; sec > 0; sec--) {
+            if (isAbortedRef.current) break;
+            setCurrentProgressText(`${stepLabel ? stepLabel + ' — ' : ''}Attesa anticollisione quota (429): ripresa tra ${sec}s...`);
+            await new Promise(r => setTimeout(r, 1000));
+          }
+          if (!isAbortedRef.current) {
+            addActivityLog(`${stepLabel ? stepLabel + ': ' : ''}Quota ripristinata! Nuovo tentativo per la pagina in corso...`, 'speed');
+            continue;
+          }
+        }
         if (attempt < maxAttempts && !isAbortedRef.current) {
           setCurrentProgressText(`${stepLabel ? stepLabel + ' — ' : ''}Re-invio con modello di riserva...`);
           await new Promise(r => setTimeout(r, 1000));
@@ -1764,17 +1830,31 @@ export function ContentImporterNew({ campaignId }: ContentImporterNewProps) {
             setPageProgressPercent(percent);
             
             setCurrentProgressText(`PDF "${item.name}" — Rendering Pagina ${pageNum}/${endPage}...`);
-            addActivityLog(`[Pag. ${pageNum}/${endPage}] Inizio rendering canvas a 1150px...`, 'info');
+            addActivityLog(`[Pag. ${pageNum}/${endPage}] Inizio rendering canvas a 1000px...`, 'info');
 
-            // Render pagina singola a passata diretta (1150px, qualità ottimizzata) senza doppio canvas
+            // Render pagina singola a passata diretta (1000px, ottimizzato per token minimi senza perdita OCR)
             let pageBase64Raw = '';
+            let isPageBlank = false;
             try {
-              pageBase64Raw = await renderPdfPage(doc, pageNum, 1150);
+              const renderResult = await renderPdfPage(doc, pageNum, 1000);
+              pageBase64Raw = renderResult.dataUrl;
+              isPageBlank = renderResult.isBlank;
               const renderTime = ((Date.now() - pageStart) / 1000).toFixed(1);
               addActivityLog(`[Pag. ${pageNum}/${endPage}] Canvas renderizzato in ${renderTime}s (${Math.round(pageBase64Raw.length / 1024)} KB)`, 'speed');
             } catch (err: any) {
               console.warn(`Errore render pagina ${pageNum}:`, err);
               addActivityLog(`[Pag. ${pageNum}] Errore render: ${err?.message}`, 'warn');
+              continue;
+            }
+
+            // 3. Pre-filtro locale pagine bianche (0 chiamate IA, 0 token consumati)
+            if (isPageBlank) {
+              addActivityLog(`[Pag. ${pageNum}/${endPage}] Pagina bianca o separatore rilevato localmente: saltata senza chiamate IA (0 token consumati).`, 'info');
+              setQueue(prev => prev.map((q, idx) => idx === i ? {
+                ...q,
+                currentPage: pageNum,
+              } : q));
+              await new Promise(r => setTimeout(r, 60));
               continue;
             }
 
@@ -1826,8 +1906,16 @@ export function ContentImporterNew({ campaignId }: ContentImporterNewProps) {
               });
             }
 
-            // Pausa reattiva per lasciare respiro al browser
-            await new Promise(r => setTimeout(r, 40));
+            // 1. Pacer Adattivo (Rate Limiter anti-429 per RPM limit):
+            // Garantisce un intervallo minimo di 4.6 secondi tra inizio di pagine consecutive
+            // per rimanere stabilmente a max ~13 RPM (sotto la soglia di 15 RPM del tier gratuito di Gemini).
+            const elapsed = Date.now() - pageStart;
+            const minInterval = 4600;
+            const waitMs = Math.max(60, minInterval - elapsed);
+            if (waitMs > 300 && pageNum < endPage && !isAbortedRef.current) {
+              setCurrentProgressText(`Pacing anticollisione RPM: prossima pagina tra ${(waitMs / 1000).toFixed(1)}s per preservare la quota...`);
+            }
+            await new Promise(r => setTimeout(r, waitMs));
           }
 
           setQueue(prev => prev.map((q, idx) => idx === i ? { 

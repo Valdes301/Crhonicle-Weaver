@@ -450,7 +450,7 @@ async function extractUnifiedContent(input: CatalogRouterInput): Promise<Catalog
         config: {
             systemInstruction: UNIFIED_SYSTEM_INSTRUCTION,
             temperature: 0.2,
-            maxOutputTokens: 8192,
+            maxOutputTokens: 4096,
         }
     });
 
@@ -796,28 +796,9 @@ async function extractUnifiedContent(input: CatalogRouterInput): Promise<Catalog
         }
     }
 
-    // 7. Salvaguardia & Auto-Rescue per il Bestiario:
-    // Attiva l'estrattore dedicato mostri SOLO se:
-    // a) La sorgente dichiarata è specificamente il Manuale dei Mostri (MM) o 'monsters_only', OPPURE
-    // b) Nessun'altra categoria è stata rilevata E il testo della pagina presenta indicatori chiari di statblock (CA, PF o GS).
-    // Questo impedisce a pagine di regole (es. Guida del Dungeon Master o PHB) di fabbricare mostri inesistenti.
-    const isExplicitRulesSource = input.sourceManual === 'dmg' || input.sourceManual === 'phb' || input.targetContentType === 'rules_only' || input.targetContentType === 'spells_only' || input.targetContentType === 'items_only';
-
-    if (monsters.length === 0 && !isExplicitRulesSource) {
-        try {
-            const dedicatedRes = await extractMonstersFromInput({
-                ...input,
-                selectedModel: model
-            });
-            if (dedicatedRes.monsters && dedicatedRes.monsters.length > 0) {
-                monsters.push(...dedicatedRes.monsters);
-                const monsterNames = new Set(monsters.map(m => m.name.toLowerCase()));
-                rules = rules.filter(r => !monsterNames.has(r.title.toLowerCase()));
-            }
-        } catch (e) {
-            console.warn("[Auto-Rescue] Fallita estrazione dedicata mostri:", e);
-        }
-    }
+    // 7. Strict Single Pass (Ottimizzazione Quota & RPM):
+    // La scansione unificata analizza già completamente mostri, regole, oggetti e incantesimi in una sola passata.
+    // Nessuna seconda chiamata automatica ridondante viene eseguita per pagina, garantendo 1 sola richiesta per pagina.
 
     // 8. Salvaguardia Immagini Intelligente: Applicazione immediata layout noti D&D e fallback rapido
     if (photoDataUri && monsters.length > 0) {
