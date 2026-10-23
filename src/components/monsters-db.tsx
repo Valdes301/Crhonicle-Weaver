@@ -42,6 +42,69 @@ const DetailItem = ({ label, value }: { label: string, value?: React.ReactNode }
     return <p><strong>{label}:</strong> {String(value)}</p>;
 }
 
+function parseAbilityScores(desc?: string) {
+  if (!desc) return null;
+  const findScore = (names: string[]) => {
+    for (const name of names) {
+      const regex = new RegExp(`${name}\\s*[:\\s]?\\s*(\\d+)\\s*\\(([+-]?\\d+)\\)`, 'i');
+      const match = desc.match(regex);
+      if (match) return { score: match[1], mod: match[2] };
+      
+      const regexSimple = new RegExp(`${name}\\s*[:\\s]?\\s*(\\d+)`, 'i');
+      const matchSimple = desc.match(regexSimple);
+      if (matchSimple) {
+        const scoreVal = parseInt(matchSimple[1], 10);
+        const modVal = Math.floor((scoreVal - 10) / 2);
+        const modStr = modVal >= 0 ? `+${modVal}` : `${modVal}`;
+        return { score: matchSimple[1], mod: modStr };
+      }
+    }
+    return null;
+  };
+
+  const str = findScore(['FOR', 'FORZA', 'STR']);
+  const dex = findScore(['DES', 'DESTREZZA', 'DEX']);
+  const con = findScore(['COS', 'COSTITUZIONE', 'CON']);
+  const int = findScore(['INT', 'INTELLIGENZA']);
+  const wis = findScore(['SAG', 'SAGGEZZA', 'WIS']);
+  const cha = findScore(['CAR', 'CARISMA', 'CHA']);
+
+  if (!str && !dex && !con && !int && !wis && !cha) return null;
+
+  return {
+    str: str || { score: '10', mod: '+0' },
+    dex: dex || { score: '10', mod: '+0' },
+    con: con || { score: '10', mod: '+0' },
+    int: int || { score: '10', mod: '+0' },
+    wis: wis || { score: '10', mod: '+0' },
+    cha: cha || { score: '10', mod: '+0' },
+  };
+}
+
+const AbilityScoresTable = ({ desc }: { desc?: string }) => {
+  const scores = parseAbilityScores(desc);
+  if (!scores) return null;
+  const items = [
+    { label: 'FOR', ...scores.str },
+    { label: 'DES', ...scores.dex },
+    { label: 'COS', ...scores.con },
+    { label: 'INT', ...scores.int },
+    { label: 'SAG', ...scores.wis },
+    { label: 'CAR', ...scores.cha },
+  ];
+  return (
+    <div className="grid grid-cols-6 gap-1.5 p-2.5 rounded-lg bg-amber-950/20 border border-amber-500/30 text-center font-mono text-xs shadow-sm">
+      {items.map((it, idx) => (
+        <div key={idx} className="flex flex-col p-1 rounded bg-background/60 border border-border/40">
+          <span className="text-[10px] font-bold text-amber-500 uppercase">{it.label}</span>
+          <span className="text-xs font-bold text-foreground mt-0.5">{it.score}</span>
+          <span className="text-[10px] text-muted-foreground">({it.mod})</span>
+        </div>
+      ))}
+    </div>
+  );
+};
+
 const monsterSchema = z.object({
   id: z.string().optional(),
   name: z.string().min(1, "Il nome è obbligatorio."),
@@ -115,7 +178,28 @@ export function MonsterFormDialog({ monster, campaignId, trigger, onSave }: { mo
     };
 
     const handleSubmit = async (values: MonsterFormData) => {
-        await onSave({
+        const result = await actions.saveMonster({
+            ...values,
+            type: sanitizeMonsterType(values.type),
+            description: cleanAiHallucinatoryLoops(values.description),
+            campaignId
+        });
+
+        if (result.success && result.data?.conflict) {
+            const confirmed = window.confirm("Un mostro con questo nome esiste già. Vuoi sovrascriverlo?");
+            if (!confirmed) return; // Annulla salvataggio
+
+            // Se confermato, procedi con l'aggiornamento usando l'ID esistente
+            await actions.saveMonster({
+                ...values,
+                id: result.data.id,
+                type: sanitizeMonsterType(values.type),
+                description: cleanAiHallucinatoryLoops(values.description),
+                campaignId
+            });
+        }
+        
+        onSave({
             ...values,
             type: sanitizeMonsterType(values.type),
             description: cleanAiHallucinatoryLoops(values.description),
@@ -501,7 +585,11 @@ export function MonstersDb({ monsters, campaignId, possessedItems, onSave, onDel
                     </div>
                   </AccordionPrimitive.Header>
                   <AccordionContent>
-                    <div className="flex flex-col sm:flex-row gap-6">
+                    <div className="space-y-4 pt-2">
+                        {/* 1. Prima di tutto: Tabella delle caratteristiche del mostro */}
+                        <AbilityScoresTable desc={monster.description} />
+
+                        <div className="flex flex-col sm:flex-row gap-6">
                         {monster.imageUrl && (
                             <div 
                               className="relative w-full sm:w-72 max-h-[420px] rounded-lg overflow-hidden border border-amber-500/30 bg-black/70 flex-shrink-0 cursor-zoom-in hover:border-amber-500/70 transition-colors flex items-center justify-center p-1.5 shadow-md group"
@@ -552,6 +640,7 @@ export function MonstersDb({ monsters, campaignId, possessedItems, onSave, onDel
                                 <MarkdownRenderer content={monster.description} className="text-sm leading-relaxed" />
                             </div>
                         </div>
+                    </div>
                     </div>
                     <div className="mt-4 flex justify-end">
                         <AlertDialog>

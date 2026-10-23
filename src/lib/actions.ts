@@ -2159,41 +2159,72 @@ export async function saveMagicItem(item: Partial<MagicItem> & { campaignId: str
         const now = new Date().toISOString();
         const rawName = item.name || 'Oggetto';
         const formattedName = formatTitleOrTag(rawName);
+        const norm = formattedName.toLowerCase().trim();
 
         let finalImageUrl = item.imageUrl || null;
         if (finalImageUrl && finalImageUrl.startsWith('data:image/')) {
             finalImageUrl = saveBase64ImageDirectly(finalImageUrl, formattedName);
         }
         
-        if (item.id) {
-            const existing = db.prepare("SELECT imageUrl FROM MagicItem WHERE id = ?").get(item.id) as { imageUrl: string } | undefined;
-            if (existing && existing.imageUrl && existing.imageUrl !== finalImageUrl) {
-                deleteAssetFile(existing.imageUrl);
-            }
+        const existing = item.id 
+            ? db.prepare("SELECT * FROM MagicItem WHERE id = ?").get(item.id) as any
+            : db.prepare("SELECT * FROM MagicItem WHERE LOWER(TRIM(name)) = LOWER(TRIM(?)) AND campaignId = ?").get(formattedName, item.campaignId) as any;
+
+        const targetId = existing?.id || id;
+        const finalResolvedImageUrl = finalImageUrl || existing?.imageUrl || null;
+
+        if (existing && finalImageUrl && existing.imageUrl && existing.imageUrl !== finalImageUrl) {
+            deleteAssetFile(existing.imageUrl);
         }
 
-        const cleanDesc = cleanAiHallucinatoryLoops(item.description) || '';
+        const cleanDesc = cleanAiHallucinatoryLoops(item.description) || existing?.description || '';
         const magicItemCols = getTableCols('MagicItem');
         const d: Record<string, any> = { 
-            id, 
+            id: targetId, 
             name: formattedName, 
-            type: item.type || 'Oggetto', 
-            rarity: item.rarity || 'Comune', 
-            attunement: item.attunement || 'No', 
+            type: item.type || existing?.type || 'Oggetto', 
+            rarity: item.rarity || existing?.rarity || 'Comune', 
+            attunement: item.attunement || existing?.attunement || 'No', 
             description: cleanDesc, 
-            cost: item.cost || 'N/D', 
-            damage: item.damage || '', 
-            techType: item.techType || 'damage', 
-            imageUrl: finalImageUrl, 
+            cost: item.cost || existing?.cost || 'N/D', 
+            damage: item.damage || existing?.damage || '', 
+            techType: item.techType || existing?.techType || 'damage', 
+            imageUrl: finalResolvedImageUrl, 
             campaignId: item.campaignId, 
-            createdAt: (item as any).createdAt || now, 
+            createdAt: existing?.createdAt || (item as any).createdAt || now, 
             updatedAt: now 
         };
         const insertCols = Object.keys(d).filter(c => magicItemCols.includes(c.toLowerCase()));
         const placeholders = insertCols.map(() => '?').join(',');
         const updateSet = insertCols.filter(c => !['id', 'name', 'campaignid', 'createdat'].includes(c.toLowerCase())).map(c => `${c}=excluded.${c}`).join(', ');
         db.prepare(`INSERT INTO MagicItem (${insertCols.join(',')}) VALUES (${placeholders}) ON CONFLICT(id) DO UPDATE SET ${updateSet}`).run(...insertCols.map(c => d[c]));
-        return actionResponse({ id, imageUrl: finalImageUrl });
+
+        // Backup di sicurezza nel compendio di sistema
+        try {
+            const systemItems = readSystemJsonFile<any>('custom-items.json', 'items');
+            const sysIdx = systemItems.findIndex((it: any) => (it.name || '').toLowerCase().trim() === norm);
+            const updatedItemEntry = {
+                id: targetId,
+                name: formattedName,
+                type: d.type,
+                rarity: d.rarity,
+                attunement: d.attunement,
+                description: d.description,
+                cost: d.cost,
+                damage: d.damage,
+                techType: d.techType,
+                imageUrl: finalResolvedImageUrl,
+                updatedAt: now
+            };
+            if (sysIdx > -1) {
+                systemItems[sysIdx] = { ...systemItems[sysIdx], ...updatedItemEntry };
+            } else {
+                systemItems.push(updatedItemEntry);
+            }
+            writeSystemJsonFile('custom-items.json', 'items', systemItems);
+        } catch {}
+
+        return actionResponse({ id: targetId, imageUrl: finalResolvedImageUrl });
     } catch (e: any) { return actionResponse(null, e.message); }
 }
 
@@ -2234,29 +2265,56 @@ export async function saveMonster(monster: Partial<Monster> & { campaignId: stri
             ? db.prepare("SELECT * FROM Monster WHERE id = ?").get(monster.id) as any
             : db.prepare("SELECT * FROM Monster WHERE LOWER(TRIM(name)) = LOWER(TRIM(?)) AND campaignId = ?").get(formattedName, monster.campaignId) as any;
 
+        // Se esiste e non è un aggiornamento diretto (ID noto), avvisa del conflitto
+        const conflict = Boolean(existing && !monster.id);
         const targetId = existing?.id || id;
 
-        if (existing && existing.imageUrl && existing.imageUrl !== finalImageUrl) {
+        // Conserva le immagini esistenti se la nuova versione non ne fornisce una valida
+        const finalResolvedImageUrl = finalImageUrl || existing?.imageUrl || existing?.imageurl || null;
+        const finalResolvedThumbnailUrl = finalThumbnailUrl || existing?.thumbnailUrl || existing?.thumbnailurl || null;
+
+        if (existing && finalImageUrl && existing.imageUrl && existing.imageUrl !== finalImageUrl) {
             deleteAssetFile(existing.imageUrl);
         }
-        if (existing && existing.thumbnailUrl && existing.thumbnailUrl !== finalThumbnailUrl) {
+        if (existing && finalThumbnailUrl && existing.thumbnailUrl && existing.thumbnailUrl !== finalThumbnailUrl) {
             deleteAssetFile(existing.thumbnailUrl);
         }
 
-        const cleanMonsterTypeStr = sanitizeMonsterType(monster.type);
+        const cleanMonsterTypeStr = sanitizeMonsterType(monster.type) || existing?.type || 'Mostro';
         const cleanDescStr = cleanAiHallucinatoryLoops(monster.description) || '';
+
+        // Unione non distruttiva della descrizione/statistiche
+        let mergedDescription = cleanDescStr;
+        if (existing && existing.description) {
+            if (!cleanDescStr) {
+                mergedDescription = existing.description;
+            } else if (!cleanDescStr.includes(existing.description.slice(0, 60)) && !existing.description.includes(cleanDescStr.slice(0, 60))) {
+                mergedDescription = `${existing.description}\n\n${cleanDescStr}`.trim();
+            }
+        }
+
+        // Conserva CA, PF e GS esistenti se la nuova scansione ha valori generici o vuoti
+        const finalAc = (monster.armorClass && monster.armorClass !== '10' && monster.armorClass.trim() !== '')
+            ? monster.armorClass
+            : (existing?.armorclass || existing?.armorClass || monster.armorClass || '10');
+        const finalHp = (monster.hitPoints && monster.hitPoints !== '10' && monster.hitPoints.trim() !== '')
+            ? monster.hitPoints
+            : (existing?.hitpoints || existing?.hitPoints || monster.hitPoints || '10');
+        const finalCr = (monster.challenge && monster.challenge !== '0' && monster.challenge.trim() !== '')
+            ? monster.challenge
+            : (existing?.challenge || monster.challenge || '0');
 
         const monsterCols = getTableCols('Monster');
         const d: Record<string, any> = { 
             id: targetId, 
             name: formattedName, 
             type: cleanMonsterTypeStr, 
-            armorclass: monster.armorClass || '10', 
-            hitpoints: monster.hitPoints || '10', 
-            challenge: monster.challenge || '0', 
-            description: cleanDescStr, 
-            imageurl: finalImageUrl, 
-            thumbnailurl: finalThumbnailUrl,
+            armorclass: finalAc, 
+            hitpoints: finalHp, 
+            challenge: finalCr, 
+            description: mergedDescription, 
+            imageurl: finalResolvedImageUrl, 
+            thumbnailurl: finalResolvedThumbnailUrl,
             campaignid: monster.campaignId, 
             createdat: existing?.createdAt || (monster as any).createdAt || now, 
             updatedat: now 
@@ -2272,31 +2330,29 @@ export async function saveMonster(monster: Partial<Monster> & { campaignId: stri
             db.prepare(`INSERT INTO Monster (${insertCols.join(',')}) VALUES (${placeholders})`).run(...insertCols.map(c => d[c]));
         }
 
-        // Se indicato o se già presente nel sistema, aggiorna anche custom-monsters.json
+        // Backup unificato automatico nel compendio di sistema per non perdere mai le creazioni
         const systemMonsters = readSystemJsonFile<any>('custom-monsters.json', 'monsters');
         const sysIdx = systemMonsters.findIndex((m: any) => (m.name || '').toLowerCase().trim() === norm);
-        if (sysIdx > -1 || monster.target === 'system' || monster.source === 'base') {
-            const updatedEntry = {
-                id: targetId,
-                name: formattedName,
-                type: cleanMonsterTypeStr,
-                armorClass: monster.armorClass || '10',
-                hitPoints: monster.hitPoints || '10',
-                challenge: monster.challenge || '0',
-                description: cleanDescStr,
-                imageUrl: finalImageUrl,
-                thumbnailUrl: finalThumbnailUrl,
-                updatedAt: now
-            };
-            if (sysIdx > -1) {
-                systemMonsters[sysIdx] = updatedEntry;
-            } else if (monster.target === 'system') {
-                systemMonsters.push(updatedEntry);
-            }
-            writeSystemJsonFile('custom-monsters.json', 'monsters', systemMonsters);
+        const updatedEntry = {
+            id: targetId,
+            name: formattedName,
+            type: cleanMonsterTypeStr,
+            armorClass: finalAc,
+            hitPoints: finalHp,
+            challenge: finalCr,
+            description: mergedDescription,
+            imageUrl: finalResolvedImageUrl,
+            thumbnailUrl: finalResolvedThumbnailUrl,
+            updatedAt: now
+        };
+        if (sysIdx > -1) {
+            systemMonsters[sysIdx] = { ...systemMonsters[sysIdx], ...updatedEntry };
+        } else {
+            systemMonsters.push(updatedEntry);
         }
+        writeSystemJsonFile('custom-monsters.json', 'monsters', systemMonsters);
 
-        return actionResponse({ id: targetId, imageUrl: finalImageUrl, thumbnailUrl: finalThumbnailUrl });
+        return actionResponse({ id: targetId, imageUrl: finalResolvedImageUrl, thumbnailUrl: finalResolvedThumbnailUrl, conflict });
     } catch (e: any) { 
         console.error("Errore saveMonster:", e);
         return actionResponse(null, e.message); 

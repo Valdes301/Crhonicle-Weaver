@@ -373,17 +373,12 @@ export function ThumbnailFramerModal({
                       transformOrigin: 'center center'
                     }}
                   >
-                    <img 
-                      src={activeImageSrc} 
-                      alt="Thumbnail crop target" 
-                      className="max-w-none pointer-events-none select-none"
-                      style={{
-                        maxHeight: '210px',
-                        maxWidth: '210px',
-                        objectFit: 'contain'
-                      }}
-                      referrerPolicy="no-referrer"
-                    />
+                      <img 
+                        src={activeImageSrc} 
+                        alt="Thumbnail crop target" 
+                        className="max-h-[150px] sm:max-h-[340px] w-auto object-contain rounded border border-white/10 pointer-events-none select-none"
+                        referrerPolicy="no-referrer"
+                      />
                   </div>
                 ) : (
                   <div className="flex flex-col items-center text-muted-foreground text-xs">

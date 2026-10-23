@@ -198,6 +198,10 @@ function ManagerContent(props: CampaignManagerProps & { initialView?: string; on
     onOpenPinConfig, onRequestNewCampaign, customSpells, customSkills, dbSettings 
   } = props;
 
+  const router = useRouter();
+  const { toast } = useToast();
+  const { toggleSidebar } = useSidebar();
+
   const compendia = useMemo(() => {
     if (dbMagicItems && dbMonsters && dbSpells && allItems && skills) {
       return {
@@ -258,25 +262,27 @@ function ManagerContent(props: CampaignManagerProps & { initialView?: string; on
       }
     };
 
+    const handleDataUpdated = () => {
+      router.refresh();
+    };
+
     window.addEventListener('dnd-player-mode-changed', handlePlayerModeChange);
     window.addEventListener('dnd-blocked-views-changed', handleBlockedViewsChange);
     window.addEventListener('dnd-backgrounds-changed', handleBgChange);
+    window.addEventListener('dnd-data-updated', handleDataUpdated);
 
     return () => {
       window.removeEventListener('dnd-player-mode-changed', handlePlayerModeChange);
       window.removeEventListener('dnd-blocked-views-changed', handleBlockedViewsChange);
       window.removeEventListener('dnd-backgrounds-changed', handleBgChange);
+      window.removeEventListener('dnd-data-updated', handleDataUpdated);
     };
-  }, [activeCampaign]);
+  }, [activeCampaign, router]);
 
   const isCurrentViewBlocked = (view: string) => {
     if (!playerModeActive) return false;
     return blockedViewsList.includes(view);
   };
-  
-  const { toggleSidebar } = useSidebar();
-  const { toast } = useToast();
-  const router = useRouter();
 
   const handleUpdateCampaign = async () => {
       if (!activeCampaign) return;
@@ -839,6 +845,9 @@ export function CampaignManager(props: CampaignManagerProps) {
         <div className="flex flex-col items-center justify-center min-h-screen text-muted-foreground gap-3">
           <Loader2 className="h-8 w-8 animate-spin text-amber-500" />
           <span className="text-xs uppercase tracking-wider font-mono text-stone-400">Caricamento Campagna...</span>
+          {typeof window !== 'undefined' && setTimeout(() => {
+              if (campaigns && campaigns.length > 0) window.location.href = '/';
+          }, 5000)}
         </div>
       )}
 

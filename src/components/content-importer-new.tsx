@@ -1,6 +1,7 @@
 'use client';
 
 import React, { useState, useEffect, useRef } from 'react';
+import { useRouter } from 'next/navigation';
 import { useToast } from "@/hooks/use-toast";
 import * as actions from '@/lib/actions';
 import { Button } from '@/components/ui/button';
@@ -213,6 +214,16 @@ const RECOMMENDED_MODELS = [
 
 export function ContentImporterNew({ campaignId }: ContentImporterNewProps) {
   const { toast } = useToast();
+  const router = useRouter();
+
+  const triggerGlobalSync = () => {
+    try {
+      router.refresh();
+      if (typeof window !== 'undefined') {
+        window.dispatchEvent(new CustomEvent('dnd-data-updated'));
+      }
+    } catch {}
+  };
   
   // Opzioni di Scansione
   const [sourceManual, setSourceManual] = useState<ManualSource>('auto');
@@ -1538,103 +1549,43 @@ export function ContentImporterNew({ campaignId }: ContentImporterNewProps) {
           const newNameLow = newCleanName.toLowerCase().trim();
           const newSimple = newNameLow.replace(/^[^:]+:\s*/, '').trim();
 
-          const existingIdx = next.findIndex(ex => {
-            const exCleanName = sanitizeMonsterName(ex.name);
-            const exLow = exCleanName.toLowerCase().trim();
-            const exSimple = exLow.replace(/^[^:]+:\s*/, '').trim();
-
-            if (exLow === newNameLow) return true;
-            // Solo Deva unisce la pagina introduttiva generica "Angelo"
-            if ((exLow === 'angelo' && newSimple === 'deva') || (newNameLow === 'angelo' && exSimple === 'deva')) {
-              return true;
-            }
-            // Planetar e Solar sono creature distinte e non devono MAI collassare in Deva o Angelo generico
-            if (newNameLow.includes('planetar') || newNameLow.includes('solar') || exLow.includes('planetar') || exLow.includes('solar')) {
-              return false;
-            }
-            // Se i nomi semplici corrispondono ma sono generici (es. 'creatura', 'mostro', 'demone'), non unirli
-            if (['creatura', 'mostro', 'demone', 'diavolo', 'drago', 'gigante'].includes(newSimple)) {
-              return false;
-            }
-            return exSimple === newSimple && exSimple.length >= 3;
+          const existingIdx = next.findIndex(m => {
+            const mClean = sanitizeMonsterName(m.name).toLowerCase().trim();
+            const mSimple = mClean.replace(/^[^:]+:\s*/, '').trim();
+            return mClean === newNameLow || mSimple === newSimple || (mSimple.length > 3 && newSimple.length > 3 && (mSimple.includes(newSimple) || newSimple.includes(mSimple)));
           });
 
           if (existingIdx > -1) {
-            const ex = next[existingIdx];
-            let preferredName = ex.name;
-            if (newM.name.includes(':') && !ex.name.includes(':')) {
-              preferredName = newM.name;
-            } else if (ex.name.toLowerCase() === 'angelo' && newM.name.toLowerCase().includes('deva')) {
-              preferredName = newM.name;
+            const existing = next[existingIdx];
+            const mergedAc = (newM.armorClass && newM.armorClass !== '10' && newM.armorClass.trim() !== '') ? newM.armorClass : existing.armorClass;
+            const mergedHp = (newM.hitPoints && newM.hitPoints !== '10' && newM.hitPoints.trim() !== '') ? newM.hitPoints : existing.hitPoints;
+            const mergedCr = (newM.challenge && newM.challenge !== '0' && newM.challenge.trim() !== '') ? newM.challenge : existing.challenge;
+            const mergedType = newM.type && newM.type !== 'Mostro' ? newM.type : existing.type;
+            const mergedImg = newM.imageUrl || existing.imageUrl;
+            const mergedThumb = newM.thumbnailUrl || existing.thumbnailUrl;
+            const mergedImgBox = newM.imageBox || existing.imageBox;
+            const mergedTokenBox = newM.tokenBox || existing.tokenBox;
+
+            let mergedDesc = existing.description || '';
+            const newDesc = newM.description || '';
+            if (!mergedDesc) {
+              mergedDesc = newDesc;
+            } else if (newDesc && !mergedDesc.includes(newDesc.slice(0, 50)) && !newDesc.includes(mergedDesc.slice(0, 50))) {
+              mergedDesc = `${mergedDesc}\n\n${newDesc}`.trim();
             }
-            preferredName = sanitizeMonsterName(preferredName);
-
-            // Priorità alle statistiche complete (valori non vuoti o con dadi/formula)
-            const ac = (newM.armorClass && newM.armorClass.trim().length > 0) ? newM.armorClass : ex.armorClass;
-            const hp = (newM.hitPoints && newM.hitPoints.trim().length > 0) ? newM.hitPoints : ex.hitPoints;
-            const cr = (newM.challenge && newM.challenge.trim().length > 0) ? newM.challenge : ex.challenge;
-            
-            const rawMergeType = (newM.type && newM.type !== 'Mostro') ? newM.type : ex.type;
-            const type = sanitizeMonsterType(rawMergeType);
-            
-            // Raccogli tutte le immagini delle pagine sorgente (senza duplicati)
-            const prevPages = ex.pageImages || (ex.rawPageImage ? [ex.rawPageImage] : []);
-            const incomingPages = newM.pageImages || (newM.rawPageImage ? [newM.rawPageImage] : []);
-            const mergedPageImages = Array.from(new Set([...prevPages, ...incomingPages])).filter(Boolean);
-
-            // Priorità intelligente alle immagini: se la scheda esistente o la nuova hanno un ritaglio artwork/token valido
-            const hasExArt = !!(ex.imageUrl && ex.imageUrl.length > 50);
-            const hasNewArt = !!(newM.imageUrl && newM.imageUrl.length > 50);
-
-            let imageUrl = ex.imageUrl || newM.imageUrl;
-            let thumbnailUrl = ex.thumbnailUrl || newM.thumbnailUrl;
-            let imageBox = ex.imageBox || newM.imageBox;
-            let tokenBox = ex.tokenBox || newM.tokenBox;
-            let rawPageImage = ex.rawPageImage || newM.rawPageImage;
-
-            if (!hasExArt && hasNewArt) {
-              imageUrl = newM.imageUrl;
-              thumbnailUrl = newM.thumbnailUrl;
-              imageBox = newM.imageBox;
-              tokenBox = newM.tokenBox;
-              rawPageImage = newM.rawPageImage;
-            } else if (hasExArt && !hasNewArt) {
-              imageUrl = ex.imageUrl;
-              thumbnailUrl = ex.thumbnailUrl;
-              imageBox = ex.imageBox;
-              tokenBox = ex.tokenBox;
-              rawPageImage = ex.rawPageImage;
-            }
-
-            // Unione intelligente della descrizione evitando duplicati
-            let combinedDesc = ex.description;
-            if (newM.description) {
-              const snippet = newM.description.slice(0, 45).trim();
-              if (!ex.description.includes(snippet)) {
-                // Se la scheda precedente era solo la lore introduttiva e la nuova contiene lo statblock
-                if (ex.description.includes('Frammenti del Divino') || ex.description.includes('Gli aboleth') || !ex.armorClass) {
-                  combinedDesc = `${ex.description}\n\n${newM.description}`.trim();
-                } else {
-                  combinedDesc = `${newM.description}\n\n${ex.description}`.trim();
-                }
-              }
-            }
-            combinedDesc = cleanAiHallucinatoryLoops(combinedDesc);
 
             next[existingIdx] = {
-              ...ex,
-              name: preferredName,
-              type,
-              armorClass: ac,
-              hitPoints: hp,
-              challenge: cr,
-              description: combinedDesc,
-              imageUrl,
-              thumbnailUrl,
-              imageBox,
-              tokenBox,
-              rawPageImage,
-              pageImages: mergedPageImages
+              ...existing,
+              name: existing.name || newCleanName,
+              type: mergedType,
+              armorClass: mergedAc,
+              hitPoints: mergedHp,
+              challenge: mergedCr,
+              imageUrl: mergedImg,
+              thumbnailUrl: mergedThumb,
+              imageBox: mergedImgBox,
+              tokenBox: mergedTokenBox,
+              description: mergedDesc,
             };
           } else {
             next.push({ ...newM, name: newCleanName });
@@ -1645,16 +1596,52 @@ export function ContentImporterNew({ campaignId }: ContentImporterNewProps) {
     }
     if (processedEquipment.length > 0) {
       setEquipment(prev => {
-        const existingNames = new Set(prev.map(e => e.name.toLowerCase().trim()));
-        const unique = processedEquipment.filter(e => !existingNames.has(e.name.toLowerCase().trim()));
-        return [...prev, ...unique];
+        const next = [...prev];
+        for (const newE of processedEquipment) {
+          const eClean = newE.name.toLowerCase().trim();
+          const existingIdx = next.findIndex(e => e.name.toLowerCase().trim() === eClean);
+          if (existingIdx > -1) {
+            const ex = next[existingIdx];
+            next[existingIdx] = {
+              ...ex,
+              cost: newE.cost || ex.cost,
+              damage: newE.damage || ex.damage,
+              armorClass: newE.armorClass || ex.armorClass,
+              properties: newE.properties || ex.properties,
+              imageUrl: newE.imageUrl || ex.imageUrl,
+              thumbnailUrl: newE.thumbnailUrl || ex.thumbnailUrl,
+              description: ex.description && newE.description && !ex.description.includes(newE.description.slice(0, 40)) ? `${ex.description}\n\n${newE.description}` : (newE.description || ex.description)
+            };
+          } else {
+            next.push(newE);
+          }
+        }
+        return next;
       });
     }
     if (processedMagicItems.length > 0) {
       setMagicItems(prev => {
-        const existingNames = new Set(prev.map(i => i.name.toLowerCase().trim()));
-        const unique = processedMagicItems.filter(i => !existingNames.has(i.name.toLowerCase().trim()));
-        return [...prev, ...unique];
+        const next = [...prev];
+        for (const newI of processedMagicItems) {
+          const iClean = newI.name.toLowerCase().trim();
+          const existingIdx = next.findIndex(i => i.name.toLowerCase().trim() === iClean);
+          if (existingIdx > -1) {
+            const ex = next[existingIdx];
+            next[existingIdx] = {
+              ...ex,
+              cost: newI.cost || ex.cost,
+              damage: newI.damage || ex.damage,
+              rarity: newI.rarity || ex.rarity,
+              attunement: newI.attunement || ex.attunement,
+              imageUrl: newI.imageUrl || ex.imageUrl,
+              thumbnailUrl: newI.thumbnailUrl || ex.thumbnailUrl,
+              description: ex.description && newI.description && !ex.description.includes(newI.description.slice(0, 40)) ? `${ex.description}\n\n${newI.description}` : (newI.description || ex.description)
+            };
+          } else {
+            next.push(newI);
+          }
+        }
+        return next;
       });
     }
     if (processedSpells.length > 0) {
@@ -2048,6 +2035,7 @@ export function ContentImporterNew({ campaignId }: ContentImporterNewProps) {
           isSaving: false 
         } : m));
         toast({ title: `"${monster.name}" salvato nel ${target === 'campaign' ? 'Bestiario di Campagna' : 'Bestiario Globale'}!` });
+        triggerGlobalSync();
       } else {
         throw new Error(res.error || "Errore salvataggio mostro");
       }
@@ -2080,6 +2068,7 @@ export function ContentImporterNew({ campaignId }: ContentImporterNewProps) {
           isSaving: false
         } : e));
         toast({ title: `"${item.name}" salvato nell'Armeria!` });
+        triggerGlobalSync();
       } else {
         throw new Error(res.error || "Errore salvataggio armeria");
       }
@@ -2112,6 +2101,7 @@ export function ContentImporterNew({ campaignId }: ContentImporterNewProps) {
           isSaving: false
         } : i));
         toast({ title: `"${item.name}" salvato negli Oggetti!` });
+        triggerGlobalSync();
       } else {
         throw new Error(res.error || "Errore salvataggio oggetto");
       }
@@ -2144,6 +2134,7 @@ export function ContentImporterNew({ campaignId }: ContentImporterNewProps) {
           isSaving: false
         } : s));
         toast({ title: `"${spell.name}" salvato nel Grimorio!` });
+        triggerGlobalSync();
       } else {
         throw new Error(res.error || "Errore salvataggio incantesimo");
       }
@@ -2170,6 +2161,7 @@ export function ContentImporterNew({ campaignId }: ContentImporterNewProps) {
           isSaving: false
         } : sk));
         toast({ title: `"${skill.name}" salvata nei Privilegi & Abilità!` });
+        triggerGlobalSync();
       } else {
         throw new Error(res.error || "Errore salvataggio abilità");
       }
@@ -2193,6 +2185,7 @@ export function ContentImporterNew({ campaignId }: ContentImporterNewProps) {
         if (res.success) {
           setRules(prev => prev.map(r => r.id === rule.id ? { ...r, savedCampaign: true, isSaving: false } : r));
           toast({ title: `Regola "${rule.title}" salvata nella Campagna!` });
+          triggerGlobalSync();
         } else {
           throw new Error(res.error || "Errore salvataggio regola");
         }
@@ -2207,6 +2200,7 @@ export function ContentImporterNew({ campaignId }: ContentImporterNewProps) {
         if (res.success) {
           setRules(prev => prev.map(r => r.id === rule.id ? { ...r, savedGlobal: true, isSaving: false } : r));
           toast({ title: `Regola "${rule.title}" salvata nel Compendio Globale!` });
+          triggerGlobalSync();
         } else {
           throw new Error(res.error || "Errore salvataggio compendio");
         }
@@ -2218,7 +2212,8 @@ export function ContentImporterNew({ campaignId }: ContentImporterNewProps) {
   };
 
   // Salvataggio di Tutto in Blocco per la scheda attiva con esecuzione parallela a lotti
-  const handleSaveAll = async (target: 'campaign' | 'global') => {
+  const handleSaveAll = async () => {
+    const target = 'campaign';
     let savedCount = 0;
 
     const runInBatches = async <T,>(items: T[], batchSize: number, fn: (item: T) => Promise<boolean>) => {
@@ -2234,7 +2229,7 @@ export function ContentImporterNew({ campaignId }: ContentImporterNewProps) {
     };
 
     if (activeTab === 'all' || activeTab === 'monsters') {
-      const pending = monsters.filter(m => target === 'campaign' ? !m.savedCampaign : !m.savedGlobal);
+      const pending = monsters.filter(m => !m.savedCampaign);
       await runInBatches(pending, 4, async (m) => {
         await handleSaveMonster(m, target);
         return true;
@@ -2242,7 +2237,7 @@ export function ContentImporterNew({ campaignId }: ContentImporterNewProps) {
     }
 
     if (activeTab === 'all' || activeTab === 'equipment') {
-      const pending = equipment.filter(e => target === 'campaign' ? !e.savedCampaign : !e.savedGlobal);
+      const pending = equipment.filter(e => !e.savedCampaign);
       await runInBatches(pending, 5, async (e) => {
         await handleSaveEquipment(e, target);
         return true;
@@ -2250,7 +2245,7 @@ export function ContentImporterNew({ campaignId }: ContentImporterNewProps) {
     }
 
     if (activeTab === 'all' || activeTab === 'items') {
-      const pending = magicItems.filter(i => target === 'campaign' ? !i.savedCampaign : !i.savedGlobal);
+      const pending = magicItems.filter(i => !i.savedCampaign);
       await runInBatches(pending, 5, async (item) => {
         await handleSaveMagicItem(item, target);
         return true;
@@ -2281,9 +2276,10 @@ export function ContentImporterNew({ campaignId }: ContentImporterNewProps) {
       });
     }
 
+    triggerGlobalSync();
     toast({
-      title: "Salvataggio Globale Completato",
-      description: `Salvati ${savedCount} elementi nel ${target === 'campaign' ? 'database di campagna' : 'compendio globale'}.`
+      title: "Salvataggio Completato",
+      description: `Salvati ${savedCount} elementi con successo nel database!`
     });
   };
 
@@ -2681,19 +2677,19 @@ export function ContentImporterNew({ campaignId }: ContentImporterNewProps) {
       {/* Coda di Scansione con Controlli Range Pagine per PDF */}
       {queue.length > 0 && (
         <Card className="bg-card/70 backdrop-blur-sm border-border/80 text-card-foreground shadow-md">
-          <CardHeader className="pb-3 flex flex-row items-center justify-between">
-            <div>
-              <CardTitle className="text-base text-foreground font-headline flex items-center gap-2">
-                <Layers className="h-4 w-4 text-primary" />
-                Coda di Scansione ({queue.length} file)
+          <CardHeader className="pb-3 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+            <div className="min-w-0 flex-1">
+              <CardTitle className="text-base text-foreground font-headline flex items-center gap-2 flex-wrap">
+                <Layers className="h-4 w-4 text-primary shrink-0" />
+                <span>Coda di Scansione ({queue.length} file)</span>
               </CardTitle>
               {!isProcessing && currentProgressText && (
-                <CardDescription className="text-xs text-primary mt-0.5">
+                <CardDescription className="text-xs text-primary mt-0.5 break-words">
                   {currentProgressText}
                 </CardDescription>
               )}
             </div>
-            <div className="flex items-center gap-2">
+            <div className="flex items-center gap-2 flex-wrap w-full sm:w-auto justify-start sm:justify-end shrink-0">
               {isProcessing ? (
                 <Button variant="destructive" size="sm" onClick={handleStopProcessing} className="text-xs h-8">
                   <X className="mr-1.5 h-3.5 w-3.5" /> Interrompi
@@ -2994,18 +2990,10 @@ export function ContentImporterNew({ campaignId }: ContentImporterNewProps) {
                 </Button>
                 <Button
                   size="sm"
-                  onClick={() => handleSaveAll('campaign')}
+                  onClick={handleSaveAll}
                   className="bg-primary hover:bg-primary/90 text-primary-foreground font-bold text-xs h-8"
                 >
-                  <BookmarkPlus className="mr-1.5 h-3.5 w-3.5" /> Salva Tutti in Campagna
-                </Button>
-                <Button
-                  size="sm"
-                  variant="outline"
-                  onClick={() => handleSaveAll('global')}
-                  className="border-border hover:bg-muted text-foreground font-semibold text-xs h-8"
-                >
-                  <FolderPlus className="mr-1.5 h-3.5 w-3.5" /> Salva nel Globale
+                  <BookmarkPlus className="mr-1.5 h-3.5 w-3.5" /> Salva Tutto
                 </Button>
                 <Button
                   size="sm"
@@ -3227,19 +3215,10 @@ export function ContentImporterNew({ campaignId }: ContentImporterNewProps) {
                               size="sm"
                               onClick={() => handleSaveMonster(m, 'campaign')}
                               disabled={m.savedCampaign || m.isSaving}
-                              className={cn("h-7 text-xs font-bold", m.savedCampaign ? "bg-emerald-900/60 text-emerald-200" : "bg-primary text-primary-foreground")}
+                              className={cn("h-7 text-xs font-bold w-full", m.savedCampaign ? "bg-emerald-900/60 text-emerald-200" : "bg-primary text-primary-foreground")}
                             >
                               {m.isSaving ? <Loader2 className="h-3 w-3 animate-spin" /> : m.savedCampaign ? <Check className="h-3 w-3 mr-1" /> : <Save className="h-3 w-3 mr-1" />}
-                              {m.savedCampaign ? 'In Campagna' : 'Salva Campagna'}
-                            </Button>
-                            <Button
-                              size="sm"
-                              variant="outline"
-                              onClick={() => handleSaveMonster(m, 'global')}
-                              disabled={m.savedGlobal || m.isSaving}
-                              className={cn("h-7 text-xs font-semibold border-border", m.savedGlobal ? "bg-emerald-950/40 text-emerald-300" : "")}
-                            >
-                              {m.savedGlobal ? 'Nel Globale' : 'Salva Globale'}
+                              {m.savedCampaign ? 'Salvato' : 'Salva'}
                             </Button>
                           </div>
                         </CardFooter>
@@ -4243,32 +4222,32 @@ export function ContentImporterNew({ campaignId }: ContentImporterNewProps) {
             )}
           </div>
 
-          <DialogFooter className="pt-3 border-t border-border/80 flex flex-wrap items-center justify-between gap-2 shrink-0">
+          <DialogFooter className="pt-3 border-t border-border/80 flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-2.5 shrink-0">
             <Button
               variant="outline"
               size="sm"
               onClick={fetchDebugLog}
               disabled={isLoadingDebugLog}
-              className="text-xs h-8 border-border hover:bg-muted font-medium"
+              className="text-xs h-9 sm:h-8 border-border hover:bg-muted font-medium w-full sm:w-auto"
             >
               <RefreshCw className={cn("h-3.5 w-3.5 mr-1.5", isLoadingDebugLog && "animate-spin")} />
               Aggiorna Log
             </Button>
-            <div className="flex items-center gap-2">
+            <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-2 w-full sm:w-auto">
               {debugLogData && (debugLogData.summary?.monstersFound?.length > 0 || debugLogData.extractedData?.monsters?.length > 0) && (
                 <Button
                   size="sm"
                   onClick={handleImportFromDebugLog}
-                  className="bg-emerald-600 hover:bg-emerald-500 text-white font-bold text-xs h-8 shadow-sm flex items-center gap-1.5"
+                  className="bg-emerald-600 hover:bg-emerald-500 text-white font-bold text-xs h-auto min-h-[36px] sm:min-h-[32px] py-1.5 px-3 shadow-sm flex items-center justify-center gap-1.5 w-full sm:w-auto text-wrap text-center"
                 >
-                  <Check className="h-3.5 w-3.5" />
-                  Importa nella Schermata di Revisione ({debugLogData.summary?.monstersFound?.length || debugLogData.extractedData?.monsters?.length || 1})
+                  <Check className="h-3.5 w-3.5 shrink-0" />
+                  <span>Importa nella Revisione ({debugLogData.summary?.monstersFound?.length || debugLogData.extractedData?.monsters?.length || 1})</span>
                 </Button>
               )}
               <Button
                 size="sm"
                 onClick={() => setShowDebugModal(false)}
-                className="bg-primary text-primary-foreground font-semibold text-xs h-8"
+                className="bg-primary text-primary-foreground font-semibold text-xs h-9 sm:h-8 w-full sm:w-auto"
               >
                 Chiudi
               </Button>
