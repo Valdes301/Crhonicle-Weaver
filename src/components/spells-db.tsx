@@ -235,7 +235,7 @@ export function SpellsDb({ spells, campaignId, possessedItems, onSave, onDelete,
     }
 
     return filtered;
-  }, [search, spells, sortBy, selectedClasses]);
+  }, [search, spells, sortBy, selectedClasses, selectedLevels]);
 
   const getLevelBadge = (level?: string) => {
       if (!level) return null;
