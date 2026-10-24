@@ -2154,9 +2154,18 @@ export async function deepNpcElaborationAction(npcId: string, campaignId: string
 
 // --- AZIONI CRUD DATABASE (ADAPTIVE) ---
 
-export async function saveMagicItem(item: Partial<MagicItem> & { campaignId: string }) {
+export async function saveMagicItem(item: Partial<MagicItem> & { campaignId: string; target?: 'system' | 'campaign' }) {
     try {
         ensureSystemCampaignRow();
+        const rawTargetId = item.target === 'system' ? 'system' : item.campaignId;
+        let targetCampaignId = rawTargetId;
+        if (targetCampaignId !== 'system') {
+            const campExists = db.prepare("SELECT id FROM Campaign WHERE id = ?").get(targetCampaignId);
+            if (!campExists) {
+                const firstCamp = db.prepare("SELECT id FROM Campaign WHERE id != 'system' ORDER BY updatedAt DESC LIMIT 1").get() as { id: string } | undefined;
+                targetCampaignId = firstCamp?.id || 'system';
+            }
+        }
         const id = item.id || randomUUID();
         const now = new Date().toISOString();
         const rawName = item.name || 'Oggetto';
@@ -2172,10 +2181,10 @@ export async function saveMagicItem(item: Partial<MagicItem> & { campaignId: str
         const targetSimple = simplify(formattedName);
 
         // Ricerca duplicati per nome (nello stesso ambito o nel sistema)
-        let existingByName = db.prepare("SELECT * FROM MagicItem WHERE (LOWER(TRIM(name)) = LOWER(TRIM(?))) AND (campaignId = ? OR campaignId = 'system')").get(formattedName, item.campaignId) as any;
+        let existingByName = db.prepare("SELECT * FROM MagicItem WHERE (LOWER(TRIM(name)) = LOWER(TRIM(?))) AND (campaignId = ? OR campaignId = 'system')").get(formattedName, targetCampaignId) as any;
         
         if (!existingByName) {
-            const allCandidates = db.prepare("SELECT id, name, campaignId FROM MagicItem WHERE campaignId = ? OR campaignId = 'system'").all(item.campaignId) as any[];
+            const allCandidates = db.prepare("SELECT id, name, campaignId FROM MagicItem WHERE campaignId = ? OR campaignId = 'system'").all(targetCampaignId) as any[];
             existingByName = allCandidates.find(i => simplify(i.name) === targetSimple);
         }
 
@@ -2216,7 +2225,7 @@ export async function saveMagicItem(item: Partial<MagicItem> & { campaignId: str
             damage: item.damage || existing?.damage || '', 
             techType: item.techType || existing?.techType || 'damage', 
             imageUrl: finalResolvedImageUrl, 
-            campaignId: item.campaignId, 
+            campaignId: targetCampaignId, 
             createdAt: existing?.createdAt || (item as any).createdAt || now, 
             updatedAt: now 
         };
@@ -2269,7 +2278,15 @@ export async function saveMonster(monster: Partial<Monster> & { campaignId: stri
         const { debugLog } = await import('./debug-logger');
         debugLog("DEBUG: saveMonster called with:", monster);
         
-        const targetCampaignId = monster.target === 'system' ? 'system' : monster.campaignId;
+        const rawTargetId = monster.target === 'system' ? 'system' : monster.campaignId;
+        let targetCampaignId = rawTargetId;
+        if (targetCampaignId !== 'system') {
+            const campExists = db.prepare("SELECT id FROM Campaign WHERE id = ?").get(targetCampaignId);
+            if (!campExists) {
+                const firstCamp = db.prepare("SELECT id FROM Campaign WHERE id != 'system' ORDER BY updatedAt DESC LIMIT 1").get() as { id: string } | undefined;
+                targetCampaignId = firstCamp?.id || 'system';
+            }
+        }
         const id = monster.id || randomUUID();
         const now = new Date().toISOString();
         const rawName = monster.name || 'Creatura';
@@ -2477,9 +2494,18 @@ export async function deleteMonster(idOrName: string, monsterName?: string, camp
     } catch (e: any) { return actionResponse(null, e.message); }
 }
 
-export async function saveSpell(spell: Partial<Spell> & { campaignId: string }) {
+export async function saveSpell(spell: Partial<Spell> & { campaignId: string; target?: 'system' | 'campaign' }) {
     try {
         ensureSystemCampaignRow();
+        const rawTargetId = (spell as any).target === 'system' ? 'system' : spell.campaignId;
+        let targetCampaignId = rawTargetId;
+        if (targetCampaignId !== 'system') {
+            const campExists = db.prepare("SELECT id FROM Campaign WHERE id = ?").get(targetCampaignId);
+            if (!campExists) {
+                const firstCamp = db.prepare("SELECT id FROM Campaign WHERE id != 'system' ORDER BY updatedAt DESC LIMIT 1").get() as { id: string } | undefined;
+                targetCampaignId = firstCamp?.id || 'system';
+            }
+        }
         const now = new Date().toISOString();
         const spellCols = getTableCols('CustomSpell');
         
@@ -2488,9 +2514,9 @@ export async function saveSpell(spell: Partial<Spell> & { campaignId: string }) 
         const targetSimple = simplify(formattedName);
 
         // Ricerca duplicati (nello stesso ambito o nel sistema)
-        let existingByName = db.prepare("SELECT * FROM CustomSpell WHERE (LOWER(TRIM(name)) = LOWER(TRIM(?))) AND (campaignId = ? OR campaignId = 'system')").get(formattedName, spell.campaignId) as any;
+        let existingByName = db.prepare("SELECT * FROM CustomSpell WHERE (LOWER(TRIM(name)) = LOWER(TRIM(?))) AND (campaignId = ? OR campaignId = 'system')").get(formattedName, targetCampaignId) as any;
         if (!existingByName) {
-            const allCandidates = db.prepare("SELECT id, name, campaignId FROM CustomSpell WHERE campaignId = ? OR campaignId = 'system'").all(spell.campaignId) as any[];
+            const allCandidates = db.prepare("SELECT id, name, campaignId FROM CustomSpell WHERE campaignId = ? OR campaignId = 'system'").all(targetCampaignId) as any[];
             existingByName = allCandidates.find(s => simplify(s.name) === targetSimple);
         }
 
@@ -2523,7 +2549,7 @@ export async function saveSpell(spell: Partial<Spell> & { campaignId: string }) 
             duration: spell.duration, 
             description: spell.description, 
             classes: spell.classes, 
-            campaignId: spell.campaignId, 
+            campaignId: targetCampaignId, 
             createdAt: (spell as any).createdAt || now, 
             updatedAt: now 
         };
@@ -2543,9 +2569,18 @@ export async function deleteSpell(id: string) {
     } catch (e: any) { return actionResponse(null, e.message); }
 }
 
-export async function saveSkill(skill: Partial<Skill> & { campaignId: string }) {
+export async function saveSkill(skill: Partial<Skill> & { campaignId: string; target?: 'system' | 'campaign' }) {
     try {
         ensureSystemCampaignRow();
+        const rawTargetId = (skill as any).target === 'system' ? 'system' : skill.campaignId;
+        let targetCampaignId = rawTargetId;
+        if (targetCampaignId !== 'system') {
+            const campExists = db.prepare("SELECT id FROM Campaign WHERE id = ?").get(targetCampaignId);
+            if (!campExists) {
+                const firstCamp = db.prepare("SELECT id FROM Campaign WHERE id != 'system' ORDER BY updatedAt DESC LIMIT 1").get() as { id: string } | undefined;
+                targetCampaignId = firstCamp?.id || 'system';
+            }
+        }
         const now = new Date().toISOString();
         const skillCols = getTableCols('CustomSkill');
         
@@ -2554,9 +2589,9 @@ export async function saveSkill(skill: Partial<Skill> & { campaignId: string }) 
         const targetSimple = simplify(formattedName);
 
         // Ricerca duplicati
-        let existingByName = db.prepare("SELECT * FROM CustomSkill WHERE (LOWER(TRIM(name)) = LOWER(TRIM(?))) AND (campaignId = ? OR campaignId = 'system')").get(formattedName, skill.campaignId) as any;
+        let existingByName = db.prepare("SELECT * FROM CustomSkill WHERE (LOWER(TRIM(name)) = LOWER(TRIM(?))) AND (campaignId = ? OR campaignId = 'system')").get(formattedName, targetCampaignId) as any;
         if (!existingByName) {
-            const allCandidates = db.prepare("SELECT id, name, campaignId FROM CustomSkill WHERE campaignId = ? OR campaignId = 'system'").all(skill.campaignId) as any[];
+            const allCandidates = db.prepare("SELECT id, name, campaignId FROM CustomSkill WHERE campaignId = ? OR campaignId = 'system'").all(targetCampaignId) as any[];
             existingByName = allCandidates.find(s => simplify(s.name) === targetSimple);
         }
 
@@ -2583,7 +2618,7 @@ export async function saveSkill(skill: Partial<Skill> & { campaignId: string }) 
             name: skill.name, 
             ability: skill.ability, 
             description: skill.description, 
-            campaignId: skill.campaignId, 
+            campaignId: targetCampaignId, 
             createdAt: (skill as any).createdAt || now, 
             updatedAt: now 
         };
@@ -2824,7 +2859,7 @@ export async function uploadGenericImage(imageData: string, entityName?: string)
 
 export async function getBackupData() {
     try {
-        const tables = ['Campaign', 'StoryArc', 'Session', 'MagicItem', 'Monster', 'SessionLoot', 'Reward', 'CharacterEvent', 'PlayerCharacter', 'CustomSpell', 'CustomSkill', 'PossessedItems', 'LetterPreset', 'Shop', 'WorldLocation', 'Npc', 'Combat', 'HomebrewRule', 'LoreEntry', 'SystemPrompt', 'ApiUsage'];
+        const tables = ['Campaign', 'StoryArc', 'Session', 'MagicItem', 'Monster', 'SessionLoot', 'Reward', 'CharacterEvent', 'PlayerCharacter', 'CustomSpell', 'CustomSkill', 'PossessedItems', 'LetterPreset', 'Shop', 'WorldLocation', 'Npc', 'Combat', 'HomebrewRule', 'LoreEntry', 'LoreVersion', 'SystemPrompt', 'ApiUsage', 'Device', 'AppSetting', 'SystemSetting'];
         const backup: Record<string, any[]> = {};
         for (const table of tables) {
             try { backup[table] = db.prepare(`SELECT * FROM ${table}`).all(); } catch (err) { backup[table] = []; }
@@ -2905,6 +2940,10 @@ export async function restoreBackupData(jsonString: string) {
             'combats': 'Combat', 'combat': 'Combat', 
             'homebrew_rules': 'HomebrewRule', 'homebrewrule': 'HomebrewRule', 'rules': 'HomebrewRule', 
             'lore_entries': 'LoreEntry', 'lore_entry': 'LoreEntry', 'loreentries': 'LoreEntry', 'loreentry': 'LoreEntry', 'lore': 'LoreEntry', 'loreentrys': 'LoreEntry',
+            'lore_versions': 'LoreVersion', 'loreversion': 'LoreVersion',
+            'devices': 'Device', 'device': 'Device',
+            'app_settings': 'AppSetting', 'appsetting': 'AppSetting',
+            'system_settings': 'SystemSetting', 'systemsetting': 'SystemSetting',
             'system_prompts': 'SystemPrompt', 'systemprompt': 'SystemPrompt', 
             'session_loot': 'SessionLoot', 'sessionloot': 'SessionLoot' 
         };
