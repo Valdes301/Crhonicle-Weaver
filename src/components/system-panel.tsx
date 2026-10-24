@@ -31,7 +31,11 @@ import {
   Sparkles,
   Palette,
   Bot,
-  Cpu
+  Cpu,
+  Copy,
+  Check,
+  Terminal,
+  Loader2
 } from 'lucide-react';
 import { SettingsView } from './settings-view';
 import { HomebrewCompendium } from './homebrew-compendium';
@@ -59,6 +63,9 @@ export function SystemPanel({
   onNewCampaign,
 }: SystemPanelProps) {
   const [activeTab, setActiveTab] = useState<'control' | 'backgrounds' | 'settings' | 'homebrew' | 'model' | 'permissions' | 'logs'>('control');
+  const [migrationLogs, setMigrationLogs] = useState<string>('');
+  const [isMigrating, setIsMigrating] = useState<boolean>(false);
+  const [copiedLogs, setCopiedLogs] = useState<boolean>(false);
   const { toast } = useToast();
 
   const handleQuickLock = () => {
@@ -437,37 +444,82 @@ export function SystemPanel({
                   Questa operazione migrerà tutti i mostri, oggetti, magie e abilità dai file JSON di sistema nel database SQLite. È un'operazione necessaria per unificare i dati e permettere ricerche globali istantanee.
                 </CardDescription>
               </CardHeader>
-              <CardContent className="p-4 pt-2">
+              <CardContent className="p-4 pt-2 space-y-4">
                 <AlertDialog>
                   <AlertDialogTrigger asChild>
                     <Button 
                       variant="destructive"
                       className="w-full sm:w-auto gap-2"
+                      disabled={isMigrating}
                     >
-                      <Database className="h-4 w-4" />
-                      Esegui Consolidamento Dati
+                      {isMigrating ? <Loader2 className="h-4 w-4 animate-spin" /> : <Database className="h-4 w-4" />}
+                      {isMigrating ? "Esecuzione in corso..." : "Esegui Consolidamento Dati"}
                     </Button>
                   </AlertDialogTrigger>
                   <AlertDialogContent className="w-[95vw]">
                     <AlertDialogHeader>
                       <AlertDialogTitle>Sei sicuro di voler procedere?</AlertDialogTitle>
                       <AlertDialogDescription>
-                        Tutti i dati presenti nei file JSON verranno copiati nel database. Eventuali duplicati verranno ignorati (basato sul nome). Questa operazione è consigliata solo una volta per migrare i dati esistenti.
+                        Tutti i dati presenti nei file JSON verranno copiati nel database. Eventuali duplicati verranno ignorati (basato sul nome). Questa operazione è consigliata per unificare i dati o riparare il compendio.
                       </AlertDialogDescription>
                     </AlertDialogHeader>
                     <AlertDialogFooter>
                       <AlertDialogCancel>Annulla</AlertDialogCancel>
                       <AlertDialogAction onClick={async () => {
-                        const res = await actions.consolidateAllDataToDbAction();
-                        if (res.success) {
-                          toast({ title: "Migrazione completata!", description: res.data?.message });
-                        } else {
-                          toast({ variant: 'destructive', title: "Errore migrazione", description: res.error });
+                        setIsMigrating(true);
+                        setMigrationLogs("Inizializzazione diagnostica ed esecuzione migrazione in corso...\nAttendere prego...");
+                        try {
+                          const res = await actions.consolidateAllDataToDbAction();
+                          const outputLogs = res.data?.logOutput || res.error || "Nessun log restituito.";
+                          setMigrationLogs(outputLogs);
+
+                          if (res.success) {
+                            toast({ title: "Migrazione completata!", description: res.data?.message });
+                          } else {
+                            toast({ variant: 'destructive', title: "Errore migrazione", description: res.error || "Si è verificato un errore." });
+                          }
+                        } catch (err: any) {
+                          const errMsg = `[ERRORE CLIENT EXCEPTION]: ${err.message || err}`;
+                          setMigrationLogs(errMsg);
+                          toast({ variant: 'destructive', title: "Errore durante la chiamata", description: err.message });
+                        } finally {
+                          setIsMigrating(false);
                         }
                       }}>Procedi con la Migrazione</AlertDialogAction>
                     </AlertDialogFooter>
                   </AlertDialogContent>
                 </AlertDialog>
+
+                {migrationLogs && (
+                  <div className="space-y-2 border-t border-rose-900/30 pt-4 mt-2">
+                    <div className="flex flex-wrap items-center justify-between gap-2">
+                      <span className="text-xs font-bold text-amber-300 flex items-center gap-1.5 font-mono">
+                        <Terminal className="h-4 w-4 text-amber-400" /> Log Diagnostico Dettagliato:
+                      </span>
+                      <Button
+                        type="button"
+                        variant="outline"
+                        size="sm"
+                        className="h-7 text-xs gap-1.5 border-amber-500/50 hover:bg-amber-500/20 text-amber-300 font-mono"
+                        onClick={() => {
+                          navigator.clipboard.writeText(migrationLogs);
+                          setCopiedLogs(true);
+                          toast({ title: "Log Copiato negli Appunti!", description: "Ora puoi incollarlo nei messaggi della chat." });
+                          setTimeout(() => setCopiedLogs(false), 3000);
+                        }}
+                      >
+                        {copiedLogs ? <Check className="h-3.5 w-3.5 text-green-400" /> : <Copy className="h-3.5 w-3.5" />}
+                        {copiedLogs ? "Log Copiato!" : "Copia Log Diagnostico"}
+                      </Button>
+                    </div>
+                    <textarea
+                      readOnly
+                      value={migrationLogs}
+                      placeholder="I log diagnostici appariranno qui dopo aver eseguito la migrazione..."
+                      className="w-full h-64 p-3 bg-stone-950 font-mono text-[11px] text-emerald-400 border border-stone-800 rounded-lg resize-y focus:outline-none focus:ring-1 focus:ring-amber-500/50 select-all leading-relaxed shadow-inner"
+                    />
+                  </div>
+                )}
               </CardContent>
             </Card>
           </div>

@@ -4962,19 +4962,74 @@ export async function saveCustomMonsterAction(data: {
 
 export async function consolidateAllDataToDbAction() {
     'use server';
+    const logs: string[] = [];
+    const log = (msg: string) => logs.push(`[${new Date().toISOString().slice(11, 19)}] ${msg}`);
+
     try {
+        log("=== INIZIO DIAGNOSTICA E CONSOLIDAMENTO DATABASE ===");
+        log(`Percorso DB: ${dbPath}`);
+        log(`Node Environment: ${process.env.NODE_ENV || 'development'} | Platform: ${process.platform} (${process.arch})`);
+
+        if (fs.existsSync(dbPath)) {
+            const stats = fs.statSync(dbPath);
+            log(`Stato file DB: Esistente (${(stats.size / 1024 / 1024).toFixed(2)} MB)`);
+        } else {
+            log(`Stato file DB: File non trovato al percorso indicato! Sarà creato.`);
+        }
+
+        // Verifica PRAGMA SQLite
+        try {
+            const fkStatus = db.prepare("PRAGMA foreign_keys").get() as any;
+            const journalMode = db.prepare("PRAGMA journal_mode").get() as any;
+            log(`PRAGMA foreign_keys: ${JSON.stringify(fkStatus)}`);
+            log(`PRAGMA journal_mode: ${JSON.stringify(journalMode)}`);
+        } catch (pragmaErr: any) {
+            log(`[AVVISO] Lettura PRAGMA fallita: ${pragmaErr.message}`);
+        }
+
+        // Garanzia Campagna System
+        log("Controllo presenza campagna 'system'...");
         ensureSystemCampaignRow();
-        const now = new Date().toISOString();
-        const campaignId = 'system';
+        const sysCamp = db.prepare("SELECT id, name FROM Campaign WHERE id = 'system'").get() as any;
+        if (sysCamp) {
+            log(`Campagna 'system' presente correttamente: ${JSON.stringify(sysCamp)}`);
+        } else {
+            log(`[ERRORE CRITICO] Impossibile verificare/creare la campagna 'system'!`);
+        }
+
+        // Ispezione tabelle e colonne
         const colsMonsters = getTableCols('Monster');
         const colsItems = getTableCols('MagicItem');
         const colsSpells = getTableCols('CustomSpell');
         const colsSkills = getTableCols('CustomSkill');
 
+        log(`Colonne 'Monster': ${colsMonsters.join(', ')}`);
+        log(`Colonne 'MagicItem': ${colsItems.join(', ')}`);
+        log(`Colonne 'CustomSpell': ${colsSpells.join(', ')}`);
+        log(`Colonne 'CustomSkill': ${colsSkills.join(', ')}`);
+
+        // Caricamento Dati JSON Base
+        const baseMonsters = getBaseMonsters();
+        const baseItems = getBaseItems();
+        const baseSpells = getBaseSpells();
+        const baseSkills = getBaseSkills();
+
+        log(`Elementi da migrare - Mostri: ${baseMonsters.length}, Oggetti: ${baseItems.length}, Incantesimi: ${baseSpells.length}, Abilità: ${baseSkills.length}`);
+
+        const now = new Date().toISOString();
+        const campaignId = 'system';
+
+        log("Avvio transazione SQLite per il popolamento...");
+        let countMonsters = 0;
+        let countItems = 0;
+        let countSpells = 0;
+        let countSkills = 0;
+
         db.transaction(() => {
             ensureSystemCampaignRow();
-            // 1. Monsters
-            const baseMonsters = getBaseMonsters();
+
+            // 1. Mostri
+            log("1/4 Inserimento Mostri...");
             const insertMonster = db.prepare(`INSERT OR IGNORE INTO Monster (${colsMonsters.join(',')}) VALUES (${colsMonsters.map(() => '?').join(',')})`);
             for (const m of baseMonsters) {
                 const data: Record<string, any> = {
@@ -4993,10 +5048,12 @@ export async function consolidateAllDataToDbAction() {
                 };
                 const values = colsMonsters.map(c => data[c.toLowerCase()] ?? null);
                 insertMonster.run(...values);
+                countMonsters++;
             }
+            log(`1/4 Mostri inseriti/verificati: ${countMonsters}`);
 
-            // 2. Magic Items & Equipment
-            const baseItems = getBaseItems();
+            // 2. Oggetti
+            log("2/4 Inserimento Oggetti...");
             const insertItem = db.prepare(`INSERT OR IGNORE INTO MagicItem (${colsItems.join(',')}) VALUES (${colsItems.map(() => '?').join(',')})`);
             for (const i of baseItems) {
                 const data: Record<string, any> = {
@@ -5016,10 +5073,12 @@ export async function consolidateAllDataToDbAction() {
                 };
                 const values = colsItems.map(c => data[c.toLowerCase()] ?? null);
                 insertItem.run(...values);
+                countItems++;
             }
+            log(`2/4 Oggetti inseriti/verificati: ${countItems}`);
 
-            // 3. Spells
-            const baseSpells = getBaseSpells();
+            // 3. Incantesimi
+            log("3/4 Inserimento Incantesimi...");
             const insertSpell = db.prepare(`INSERT OR IGNORE INTO CustomSpell (${colsSpells.join(',')}) VALUES (${colsSpells.map(() => '?').join(',')})`);
             for (const s of baseSpells) {
                 const data: Record<string, any> = {
@@ -5039,10 +5098,12 @@ export async function consolidateAllDataToDbAction() {
                 };
                 const values = colsSpells.map(c => data[c.toLowerCase()] ?? null);
                 insertSpell.run(...values);
+                countSpells++;
             }
+            log(`3/4 Incantesimi inseriti/verificati: ${countSpells}`);
 
-            // 4. Skills
-            const baseSkills = getBaseSkills();
+            // 4. Abilità
+            log("4/4 Inserimento Abilità...");
             const insertSkill = db.prepare(`INSERT OR IGNORE INTO CustomSkill (${colsSkills.join(',')}) VALUES (${colsSkills.map(() => '?').join(',')})`);
             for (const s of baseSkills) {
                 const data: Record<string, any> = {
@@ -5056,12 +5117,31 @@ export async function consolidateAllDataToDbAction() {
                 };
                 const values = colsSkills.map(c => data[c.toLowerCase()] ?? null);
                 insertSkill.run(...values);
+                countSkills++;
             }
+            log(`4/4 Abilità inserite/verificate: ${countSkills}`);
         })();
 
-        return actionResponse({ success: true, message: "Migrazione completata con successo!" });
+        log("Transazione completata con SUCCESSO!");
+        log("=== CONSOLIDAMENTO COMPLETATO CORRETTAMENTE ===");
+
+        return actionResponse({
+            success: true,
+            message: `Migrazione completata con successo! (${countMonsters} mostri, ${countItems} oggetti, ${countSpells} magie, ${countSkills} abilità)`,
+            logOutput: logs.join('\n')
+        });
+
     } catch (e: any) {
-        return actionResponse(null, e.message);
+        log(`[ERRORE FATALE MIGRAZIONE]: ${e.message || e}`);
+        if (e.code) log(`Codice Errore SQLite: ${e.code}`);
+        if (e.stack) log(`Stack Trace:\n${e.stack}`);
+        log("=== CONSOLIDAMENTO FALLITO ===");
+
+        return actionResponse({
+            success: false,
+            message: `Errore migrazione: ${e.message || e}`,
+            logOutput: logs.join('\n')
+        }, e.message || "Errore sconosciuto durante la migrazione.");
     }
 }
 
