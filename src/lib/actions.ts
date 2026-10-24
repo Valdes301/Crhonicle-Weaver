@@ -4999,7 +4999,7 @@ export async function consolidateAllDataToDbAction() {
                 log(`Campagna 'system' verificata: ${JSON.stringify(sysCamp)}`);
             } else {
                 log(`[AVVISO] Forzatura inserimento campagna 'system'...`);
-                db.prepare("INSERT OR REPLACE INTO Campaign (id, name, setting, description, summary) VALUES ('system', 'Sistema', 'Compendio Globale', 'Campagna tecnica per i dati condivisi', 'Archivio globale dei dati di gioco.')").run();
+                ensureSystemCampaignRow();
             }
 
             // Bonifica automatica record orfani

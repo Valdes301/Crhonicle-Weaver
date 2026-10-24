@@ -438,10 +438,29 @@ db.exec(`
 // Inizializzazione Campagna di Sistema (Spostata all'inizio per garantire l'integrità dei vincoli FK)
 export function ensureSystemCampaignRow() {
     try {
-        db.prepare(`
-            INSERT OR IGNORE INTO Campaign (id, name, setting, description, summary)
-            VALUES ('system', 'Sistema', 'Compendio Globale', 'Campagna tecnica per i dati condivisi', 'Archivio globale dei dati di gioco.')
-        `).run();
+        const now = new Date().toISOString();
+        const cols = (db.prepare(`PRAGMA table_info("Campaign")`).all() as any[]).map(c => c.name.toLowerCase());
+        const hasCreatedAt = cols.includes('createdat');
+        const hasUpdatedAt = cols.includes('updatedat');
+
+        if (hasCreatedAt && hasUpdatedAt) {
+            db.prepare(`
+                INSERT OR IGNORE INTO Campaign (id, name, setting, description, summary, createdAt, updatedAt)
+                VALUES ('system', 'Sistema', 'Compendio Globale', 'Campagna tecnica per i dati condivisi', 'Archivio globale dei dati di gioco.', ?, ?)
+            `).run(now, now);
+        } else {
+            db.prepare(`
+                INSERT OR IGNORE INTO Campaign (id, name, setting, description, summary)
+                VALUES ('system', 'Sistema', 'Compendio Globale', 'Campagna tecnica per i dati condivisi', 'Archivio globale dei dati di gioco.')
+            `).run();
+        }
+
+        if (hasCreatedAt) {
+            db.prepare("UPDATE Campaign SET createdAt = CURRENT_TIMESTAMP WHERE createdAt IS NULL").run();
+        }
+        if (hasUpdatedAt) {
+            db.prepare("UPDATE Campaign SET updatedAt = CURRENT_TIMESTAMP WHERE updatedAt IS NULL").run();
+        }
     } catch (e) {
         console.error("[DB Init] Errore inserimento Campagna Sistema:", e);
     }
