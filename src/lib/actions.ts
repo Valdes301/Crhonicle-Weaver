@@ -2167,9 +2167,33 @@ export async function saveMagicItem(item: Partial<MagicItem> & { campaignId: str
             finalImageUrl = saveBase64ImageDirectly(finalImageUrl, formattedName);
         }
         
-        const existing = item.id 
-            ? db.prepare("SELECT * FROM MagicItem WHERE id = ?").get(item.id) as any
-            : db.prepare("SELECT * FROM MagicItem WHERE LOWER(TRIM(name)) = LOWER(TRIM(?)) AND campaignId = ?").get(formattedName, item.campaignId) as any;
+        const simplify = (str: string) => (str || '').toLowerCase().trim().replace(/ck/g, 'k').replace(/[^a-z0-9]/g, '');
+        const targetSimple = simplify(formattedName);
+
+        // Ricerca duplicati per nome (nello stesso ambito o nel sistema)
+        let existingByName = db.prepare("SELECT * FROM MagicItem WHERE (LOWER(TRIM(name)) = LOWER(TRIM(?))) AND (campaignId = ? OR campaignId = 'system')").get(formattedName, item.campaignId) as any;
+        
+        if (!existingByName) {
+            const allCandidates = db.prepare("SELECT id, name, campaignId FROM MagicItem WHERE campaignId = ? OR campaignId = 'system'").all(item.campaignId) as any[];
+            existingByName = allCandidates.find(i => simplify(i.name) === targetSimple);
+        }
+
+        const existingById = item.id ? db.prepare("SELECT * FROM MagicItem WHERE id = ?").get(item.id) as any : null;
+        const existing = (item.id && existingById) ? existingById : existingByName;
+
+        // Gestione Conflitti
+        if (existing && !(item as any).overwrite) {
+            const isDifferentId = item.id && existing.id !== item.id;
+            const isNewCreation = !item.id;
+            if (isDifferentId || isNewCreation) {
+                return actionResponse({
+                    conflict: true,
+                    existingId: existing.id,
+                    existingName: existing.name,
+                    existingCampaignId: existing.campaignId
+                });
+            }
+        }
 
         const targetId = existing?.id || id;
         const finalResolvedImageUrl = finalImageUrl || existing?.imageUrl || null;
@@ -2256,29 +2280,37 @@ export async function saveMonster(monster: Partial<Monster> & { campaignId: stri
             writeSystemJsonFile('deleted-monsters.json', 'deletedMonsters', deletedList.filter(d => (d || '').toLowerCase().trim() !== norm));
         }
 
-        const simplify = (str: string) => (str || '').toLowerCase().replace(/ck/g, 'k').replace(/[^a-z0-9]/g, '');
+        const simplify = (str: string) => (str || '').toLowerCase().trim().replace(/ck/g, 'k').replace(/[^a-z0-9]/g, '');
         const targetSimple = simplify(formattedName);
 
-        // Ricerca duplicati per nome (nello stesso ambito: campagna o sistema)
-        let existingByName = db.prepare("SELECT * FROM Monster WHERE LOWER(TRIM(name)) = LOWER(TRIM(?)) AND campaignId = ?").get(formattedName, targetCampaignId) as any;
+        // Ricerca duplicati per nome (nello stesso ambito o nel sistema)
+        let existingByName = db.prepare("SELECT * FROM Monster WHERE (LOWER(TRIM(name)) = LOWER(TRIM(?))) AND (campaignId = ? OR campaignId = 'system')").get(formattedName, targetCampaignId) as any;
         
-        if (!existingByName && targetCampaignId !== 'system') {
-            const allCampMonsters = db.prepare("SELECT id, name FROM Monster WHERE campaignId = ?").all(targetCampaignId) as any[];
-            existingByName = allCampMonsters.find(m => simplify(m.name) === targetSimple);
+        if (!existingByName) {
+            // Ricerca fuzzy/semplificata se quella esatta fallisce
+            const allCandidates = db.prepare("SELECT id, name, campaignId FROM Monster WHERE campaignId = ? OR campaignId = 'system'").all(targetCampaignId) as any[];
+            existingByName = allCandidates.find(m => simplify(m.name) === targetSimple);
         }
 
         // Ricerca per ID
         const existingById = monster.id && monster.id.length > 10 ? db.prepare("SELECT * FROM Monster WHERE id = ?").get(monster.id) as any : null;
-        const existing = existingByName || existingById;
+        
+        // Priorità all'ID se fornito, altrimenti al nome
+        const existing = (monster.id && existingById) ? existingById : existingByName;
 
-        // Gestione Conflitti
-        if (existing && !monster.overwrite && (!monster.id || existing.id !== monster.id)) {
-            return actionResponse({
-                conflict: true,
-                existingId: existing.id,
-                existingName: existing.name,
-                existingCampaignId: existing.campaignId
-            });
+        // Gestione Conflitti: se troviamo un duplicato con nome uguale ma ID diverso, segnaliamo il conflitto
+        if (existing && !monster.overwrite) {
+            const isDifferentId = monster.id && existing.id !== monster.id;
+            const isNewCreation = !monster.id;
+            
+            if (isDifferentId || isNewCreation) {
+                return actionResponse({
+                    conflict: true,
+                    existingId: existing.id,
+                    existingName: existing.name,
+                    existingCampaignId: existing.campaignId
+                });
+            }
         }
 
         let finalImageUrl = monster.imageUrl || null;
@@ -2448,9 +2480,33 @@ export async function saveSpell(spell: Partial<Spell> & { campaignId: string }) 
         const now = new Date().toISOString();
         const spellCols = getTableCols('CustomSpell');
         
-        const existing = spell.id 
-            ? db.prepare("SELECT id FROM CustomSpell WHERE id = ?").get(spell.id) as any
-            : db.prepare("SELECT id FROM CustomSpell WHERE LOWER(TRIM(name)) = LOWER(TRIM(?)) AND campaignId = ?").get(spell.name, spell.campaignId) as any;
+        const formattedName = (spell.name || '').trim();
+        const simplify = (str: string) => (str || '').toLowerCase().trim().replace(/[^a-z0-9]/g, '');
+        const targetSimple = simplify(formattedName);
+
+        // Ricerca duplicati (nello stesso ambito o nel sistema)
+        let existingByName = db.prepare("SELECT * FROM CustomSpell WHERE (LOWER(TRIM(name)) = LOWER(TRIM(?))) AND (campaignId = ? OR campaignId = 'system')").get(formattedName, spell.campaignId) as any;
+        if (!existingByName) {
+            const allCandidates = db.prepare("SELECT id, name, campaignId FROM CustomSpell WHERE campaignId = ? OR campaignId = 'system'").all(spell.campaignId) as any[];
+            existingByName = allCandidates.find(s => simplify(s.name) === targetSimple);
+        }
+
+        const existingById = spell.id ? db.prepare("SELECT * FROM CustomSpell WHERE id = ?").get(spell.id) as any : null;
+        const existing = (spell.id && existingById) ? existingById : existingByName;
+
+        // Gestione Conflitti
+        if (existing && !(spell as any).overwrite) {
+            const isDifferentId = spell.id && existing.id !== spell.id;
+            const isNewCreation = !spell.id;
+            if (isDifferentId || isNewCreation) {
+                return actionResponse({
+                    conflict: true,
+                    existingId: existing.id,
+                    existingName: existing.name,
+                    existingCampaignId: existing.campaignId
+                });
+            }
+        }
 
         const id = existing?.id || spell.id || randomUUID();
         const d: Record<string, any> = { 
@@ -2489,9 +2545,33 @@ export async function saveSkill(skill: Partial<Skill> & { campaignId: string }) 
         const now = new Date().toISOString();
         const skillCols = getTableCols('CustomSkill');
         
-        const existing = skill.id 
-            ? db.prepare("SELECT id FROM CustomSkill WHERE id = ?").get(skill.id) as any
-            : db.prepare("SELECT id FROM CustomSkill WHERE LOWER(TRIM(name)) = LOWER(TRIM(?)) AND campaignId = ?").get(skill.name, skill.campaignId) as any;
+        const formattedName = (skill.name || '').trim();
+        const simplify = (str: string) => (str || '').toLowerCase().trim().replace(/[^a-z0-9]/g, '');
+        const targetSimple = simplify(formattedName);
+
+        // Ricerca duplicati
+        let existingByName = db.prepare("SELECT * FROM CustomSkill WHERE (LOWER(TRIM(name)) = LOWER(TRIM(?))) AND (campaignId = ? OR campaignId = 'system')").get(formattedName, skill.campaignId) as any;
+        if (!existingByName) {
+            const allCandidates = db.prepare("SELECT id, name, campaignId FROM CustomSkill WHERE campaignId = ? OR campaignId = 'system'").all(skill.campaignId) as any[];
+            existingByName = allCandidates.find(s => simplify(s.name) === targetSimple);
+        }
+
+        const existingById = skill.id ? db.prepare("SELECT * FROM CustomSkill WHERE id = ?").get(skill.id) as any : null;
+        const existing = (skill.id && existingById) ? existingById : existingByName;
+
+        // Gestione Conflitti
+        if (existing && !(skill as any).overwrite) {
+            const isDifferentId = skill.id && existing.id !== skill.id;
+            const isNewCreation = !skill.id;
+            if (isDifferentId || isNewCreation) {
+                return actionResponse({
+                    conflict: true,
+                    existingId: existing.id,
+                    existingName: existing.name,
+                    existingCampaignId: existing.campaignId
+                });
+            }
+        }
 
         const id = existing?.id || skill.id || randomUUID();
         const d: Record<string, any> = { 

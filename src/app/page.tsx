@@ -29,7 +29,8 @@ async function getCampaignsData(activeCampaignId?: string): Promise<{
     while (attempts < 3) {
         attempts++;
         try {
-            const campaigns = db.prepare('SELECT * FROM Campaign ORDER BY updatedAt DESC').all() as Campaign[];
+            const allCampaigns = db.prepare('SELECT * FROM Campaign ORDER BY updatedAt DESC').all() as Campaign[];
+            const campaigns = allCampaigns.filter(c => c.id !== 'system');
             const letterPresets = db.prepare('SELECT * FROM LetterPreset ORDER BY createdAt DESC').all() as LetterPreset[];
             
             if (!campaigns || campaigns.length === 0) {
@@ -41,7 +42,7 @@ async function getCampaignsData(activeCampaignId?: string): Promise<{
                 activeCampaignData = campaigns.find(c => c.id === activeCampaignId);
             }
             
-            if (!activeCampaignData) {
+            if (!activeCampaignData && campaigns.length > 0) {
                 activeCampaignData = campaigns[0];
             }
 
