@@ -432,7 +432,18 @@ db.exec(`
     CREATE INDEX IF NOT EXISTS idx_lore_campaign ON LoreEntry (campaignId, category);
     CREATE INDEX IF NOT EXISTS idx_loreversion_entry ON LoreVersion (entryId, versionNumber DESC);
     CREATE INDEX IF NOT EXISTS idx_apiusage_timestamp ON ApiUsage (timestamp);
-`);
+`
+);
+
+// Inizializzazione Campagna di Sistema (Spostata all'inizio per garantire l'integrità dei vincoli FK)
+try {
+    db.prepare(`
+        INSERT OR IGNORE INTO Campaign (id, name, setting, description, summary)
+        VALUES ('system', 'Sistema', 'Compendio Globale', 'Campagna tecnica per i dati condivisi', 'Archivio globale dei dati di gioco.')
+    `).run();
+} catch (e) {
+    console.error("[DB Init] Errore critico inserimento Campagna Sistema:", e);
+}
 
 // --- SISTEMA DI MIGRAZIONE ROBUSTO ---
 const migrations = [

@@ -2445,13 +2445,33 @@ export async function deleteMonster(idOrName: string, monsterName?: string, camp
 
 export async function saveSpell(spell: Partial<Spell> & { campaignId: string }) {
     try {
-        const id = spell.id || randomUUID();
         const now = new Date().toISOString();
         const spellCols = getTableCols('CustomSpell');
-        const d: Record<string, any> = { id, name: spell.name, level: spell.level, school: spell.school, casting_time: spell.casting_time, range: spell.range, components: spell.components, duration: spell.duration, description: spell.description, classes: spell.classes, campaignId: spell.campaignId, createdAt: (spell as any).createdAt || now, updatedAt: now };
+        
+        const existing = spell.id 
+            ? db.prepare("SELECT id FROM CustomSpell WHERE id = ?").get(spell.id) as any
+            : db.prepare("SELECT id FROM CustomSpell WHERE LOWER(TRIM(name)) = LOWER(TRIM(?)) AND campaignId = ?").get(spell.name, spell.campaignId) as any;
+
+        const id = existing?.id || spell.id || randomUUID();
+        const d: Record<string, any> = { 
+            id, 
+            name: spell.name, 
+            level: spell.level, 
+            school: spell.school, 
+            casting_time: spell.casting_time, 
+            range: spell.range, 
+            components: spell.components, 
+            duration: spell.duration, 
+            description: spell.description, 
+            classes: spell.classes, 
+            campaignId: spell.campaignId, 
+            createdAt: (spell as any).createdAt || now, 
+            updatedAt: now 
+        };
         const insertCols = Object.keys(d).filter(c => spellCols.includes(c.toLowerCase()));
         const placeholders = insertCols.map(() => '?').join(',');
         const updateSet = insertCols.filter(c => !['id', 'name', 'campaignid', 'createdat'].includes(c.toLowerCase())).map(c => `${c}=excluded.${c}`).join(', ');
+        
         db.prepare(`INSERT INTO CustomSpell (${insertCols.join(',')}) VALUES (${placeholders}) ON CONFLICT(id) DO UPDATE SET ${updateSet}`).run(...insertCols.map(c => d[c]));
         return actionResponse({ id });
     } catch (e: any) { return actionResponse(null, e.message); }
@@ -2466,13 +2486,27 @@ export async function deleteSpell(id: string) {
 
 export async function saveSkill(skill: Partial<Skill> & { campaignId: string }) {
     try {
-        const id = skill.id || randomUUID();
         const now = new Date().toISOString();
         const skillCols = getTableCols('CustomSkill');
-        const d: Record<string, any> = { id, name: skill.name, ability: skill.ability, description: skill.description, campaignId: skill.campaignId, createdAt: (skill as any).createdAt || now, updatedAt: now };
+        
+        const existing = skill.id 
+            ? db.prepare("SELECT id FROM CustomSkill WHERE id = ?").get(skill.id) as any
+            : db.prepare("SELECT id FROM CustomSkill WHERE LOWER(TRIM(name)) = LOWER(TRIM(?)) AND campaignId = ?").get(skill.name, skill.campaignId) as any;
+
+        const id = existing?.id || skill.id || randomUUID();
+        const d: Record<string, any> = { 
+            id, 
+            name: skill.name, 
+            ability: skill.ability, 
+            description: skill.description, 
+            campaignId: skill.campaignId, 
+            createdAt: (skill as any).createdAt || now, 
+            updatedAt: now 
+        };
         const insertCols = Object.keys(d).filter(c => skillCols.includes(c.toLowerCase()));
         const placeholders = insertCols.map(() => '?').join(',');
         const updateSet = insertCols.filter(c => !['id', 'name', 'campaignid', 'createdat'].includes(c.toLowerCase())).map(c => `${c}=excluded.${c}`).join(', ');
+        
         db.prepare(`INSERT INTO CustomSkill (${insertCols.join(',')}) VALUES (${placeholders}) ON CONFLICT(id) DO UPDATE SET ${updateSet}`).run(...insertCols.map(c => d[c]));
         return actionResponse({ id });
     } catch (e: any) { return actionResponse(null, e.message); }
@@ -4809,6 +4843,15 @@ export async function saveCustomMonsterAction(data: {
         db.prepare(`
             INSERT INTO Monster (id, campaignId, name, type, armorClass, hitPoints, challenge, description, imageUrl, createdAt, updatedAt)
             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            ON CONFLICT(id) DO UPDATE SET 
+                name = excluded.name,
+                type = excluded.type,
+                armorClass = excluded.armorClass,
+                hitPoints = excluded.hitPoints,
+                challenge = excluded.challenge,
+                description = excluded.description,
+                imageUrl = COALESCE(excluded.imageUrl, Monster.imageUrl),
+                updatedAt = excluded.updatedAt
         `).run(
             id,
             data.campaignId,
