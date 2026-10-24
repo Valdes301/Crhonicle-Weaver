@@ -41,6 +41,7 @@ import { SystemLogsViewer } from './system-logs-viewer';
 import { isPinConfigured, setIsLocked } from '@/lib/pin-storage';
 import { useToast } from '@/hooks/use-toast';
 import { PlayerPermissionsMatrix } from './player-permissions-matrix';
+import * as actions from '@/lib/actions';
 
 type SystemPanelProps = {
   campaign: CampaignWithRelations;

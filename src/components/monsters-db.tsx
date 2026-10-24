@@ -288,29 +288,18 @@ export function MonsterFormDialog({ monster, campaignId, trigger, onSave }: { mo
         });
 
         if (result.success && result.data?.conflict) {
-            const confirmed = window.confirm(`Un mostro con il nome "${result.data.existingName}" esiste già. Vuoi sovrascriverlo?`);
-            if (!confirmed) return; 
-
-            // Se confermato, procedi con l'aggiornamento usando l'ID esistente e il flag overwrite
-            const updateRes = await actions.saveMonster({
-                ...values,
-                id: result.data.existingId,
-                overwrite: true,
-                type: sanitizeMonsterType(values.type),
-                description: cleanAiHallucinatoryLoops(values.description),
-                campaignId
+            // Se c'è un conflitto, mostriamo un toast informativo e usiamo il sistema di conferma (qui implementato come interazione successiva)
+            // Nota: in un'app reale useremmo un altro stato per mostrare un dialog di conferma.
+            // Per ora, visto che window.confirm è sconsigliato, implementiamo una logica di "doppio click" o "forza salvataggio" tramite toast.
+            
+            toast({
+                title: "Conflitto rilevato",
+                description: `Un mostro chiamato "${result.data.existingName}" esiste già. Se vuoi sovrascriverlo, premi di nuovo Salva (l'ID è stato impostato).`,
+                variant: "destructive"
             });
             
-            if (updateRes.success) {
-                onSave({
-                    ...values,
-                    id: result.data.existingId,
-                    type: sanitizeMonsterType(values.type),
-                    description: cleanAiHallucinatoryLoops(values.description),
-                    campaignId
-                });
-                setIsOpen(false);
-            }
+            form.setValue('id', result.data.existingId);
+            // Non chiudiamo il dialog, permettiamo all'utente di premere di nuovo Salva
             return;
         }
         
@@ -323,6 +312,7 @@ export function MonsterFormDialog({ monster, campaignId, trigger, onSave }: { mo
                 campaignId
             });
             setIsOpen(false);
+            toast({ title: "Mostro salvato con successo!" });
         } else {
             toast({ variant: 'destructive', title: "Errore salvataggio", description: result.error });
         }

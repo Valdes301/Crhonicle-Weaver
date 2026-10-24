@@ -1368,7 +1368,7 @@ export async function scanSessionForLoot(sessionId: string) {
                     charType = 'npc';
                     if (!charId && event.isNew) {
                         charId = randomUUID();
-                        const npcD: Record<string, any> = { id: charId, campaignId: session.campaignId, name: event.name, race: 'Sconosciuta', gender: 'Maschio', age: 'Adulto', status: 'Normale', alignment: 'Neutrale', details: JSON.stringify({ name: event.name, race: 'Sconosciuta', occupation: 'Rilevato', appearance: 'Dati sensoriali in attesa di catalogo.', personality: 'Personalità da definire.', mannerism: '—', secret: 'Segreto ignoto.', encounterHook: event.event }), createdAt: now, updatedAt: now };
+                        const npcD: Record<string, any> = { id: charId, campaignId: session.campaignId, name: event.name, race: 'Sconosciuta', gender: 'Maschio', age: 'Adulto', status: 'Normale', alignment: 'Neutrale', details: JSON.stringify({ name: event.name, race: 'Sconosciuta', occupation: 'Rilevato', appearance: 'Dati sensoriali in attesa di catalogo.', personality: 'Personalità da definire.', mannerism: '-', secret: 'Segreto ignoto.', encounterHook: event.event }), createdAt: now, updatedAt: now };
                         const npcCols = getTableCols('Npc');
                         const nCols = Object.keys(npcD).filter(c => npcCols.includes(c.toLowerCase()));
                         db.prepare(`INSERT INTO Npc (${nCols.join(',')}) VALUES (${nCols.map(() => '?').join(',')})`).run(...nCols.map(c => npcD[c]));
@@ -2242,47 +2242,15 @@ export async function saveMonster(monster: Partial<Monster> & { campaignId: stri
     try {
         const { debugLog } = await import('./debug-logger');
         debugLog("DEBUG: saveMonster called with:", monster);
+        
+        const targetCampaignId = monster.target === 'system' ? 'system' : monster.campaignId;
         const id = monster.id || randomUUID();
         const now = new Date().toISOString();
         const rawName = monster.name || 'Creatura';
         const formattedName = formatTitleOrTag(rawName);
         const norm = formattedName.toLowerCase().trim();
 
-        // 1. Unificazione e Migrazione Automatica:
-        try {
-            const systemMonsters = readSystemJsonFile<any>('custom-monsters.json', 'monsters');
-            if (systemMonsters && systemMonsters.length > 0) {
-                const cols = getTableCols('Monster');
-                for (const sm of systemMonsters) {
-                    const smFormatted = formatTitleOrTag(sm.name || '');
-                    if (!smFormatted) continue;
-                    const alreadyInDb = db.prepare("SELECT id FROM Monster WHERE LOWER(TRIM(name)) = LOWER(TRIM(?)) AND campaignId = ?").get(smFormatted, monster.campaignId);
-                    if (!alreadyInDb) {
-                        const newId = sm.id || randomUUID();
-                        const insertData: Record<string, any> = {
-                            id: newId,
-                            name: smFormatted,
-                            type: sanitizeMonsterType(sm.type),
-                            armorclass: sm.armorClass || '10',
-                            hitpoints: sm.hitPoints || '10',
-                            challenge: sm.challenge || '0',
-                            description: cleanAiHallucinatoryLoops(sm.description) || '',
-                            imageurl: sm.imageUrl || null,
-                            thumbnailurl: sm.thumbnailUrl || null,
-                            campaignid: monster.campaignId,
-                            createdat: sm.createdAt || now,
-                            updatedat: sm.updatedAt || now
-                        };
-                        const insertCols = Object.keys(insertData).filter(c => cols.includes(c.toLowerCase()));
-                        const placeholders = insertCols.map(() => '?').join(',');
-                        db.prepare(`INSERT INTO Monster (${insertCols.join(',')}) VALUES (${placeholders})`).run(...insertCols.map(c => insertData[c]));
-                    }
-                }
-            }
-        } catch (migErr) {
-            debugLog("[saveMonster] Sync custom-monsters error:", migErr);
-        }
-
+        // Rimuovi dalla lista eliminati se presente
         const deletedList = readSystemJsonFile<string>('deleted-monsters.json', 'deletedMonsters');
         if (deletedList.some(d => (d || '').toLowerCase().trim() === norm)) {
             writeSystemJsonFile('deleted-monsters.json', 'deletedMonsters', deletedList.filter(d => (d || '').toLowerCase().trim() !== norm));
@@ -2291,30 +2259,25 @@ export async function saveMonster(monster: Partial<Monster> & { campaignId: stri
         const simplify = (str: string) => (str || '').toLowerCase().replace(/ck/g, 'k').replace(/[^a-z0-9]/g, '');
         const targetSimple = simplify(formattedName);
 
-        let existingByName = db.prepare("SELECT * FROM Monster WHERE LOWER(TRIM(name)) = LOWER(TRIM(?)) AND campaignId = ?").get(formattedName, monster.campaignId) as any;
-        if (!existingByName) {
-            const allCampMonsters = db.prepare("SELECT id, name FROM Monster WHERE campaignId = ?").all(monster.campaignId) as any[];
+        // Ricerca duplicati per nome (nello stesso ambito: campagna o sistema)
+        let existingByName = db.prepare("SELECT * FROM Monster WHERE LOWER(TRIM(name)) = LOWER(TRIM(?)) AND campaignId = ?").get(formattedName, targetCampaignId) as any;
+        
+        if (!existingByName && targetCampaignId !== 'system') {
+            const allCampMonsters = db.prepare("SELECT id, name FROM Monster WHERE campaignId = ?").all(targetCampaignId) as any[];
             existingByName = allCampMonsters.find(m => simplify(m.name) === targetSimple);
         }
-        if (!existingByName) {
-            const baseList = getBaseMonsters();
-            const foundBase = baseList.find(m => simplify(m.name) === targetSimple);
-            if (foundBase) {
-                existingByName = { id: foundBase.id || randomUUID(), name: foundBase.name, isBase: true };
-            }
-        }
 
+        // Ricerca per ID
         const existingById = monster.id && monster.id.length > 10 ? db.prepare("SELECT * FROM Monster WHERE id = ?").get(monster.id) as any : null;
-        debugLog("DEBUG: existingByName:", existingByName);
-        debugLog("DEBUG: existingById:", existingById);
         const existing = existingByName || existingById;
-        debugLog("DEBUG: existing:", existing);
 
-        if (existing && !existing.isBase && !monster.overwrite && (!monster.id || existing.id !== monster.id)) {
+        // Gestione Conflitti
+        if (existing && !monster.overwrite && (!monster.id || existing.id !== monster.id)) {
             return actionResponse({
                 conflict: true,
                 existingId: existing.id,
-                existingName: existing.name
+                existingName: existing.name,
+                existingCampaignId: existing.campaignId
             });
         }
 
@@ -2329,9 +2292,10 @@ export async function saveMonster(monster: Partial<Monster> & { campaignId: stri
         }
 
         const targetId = existing?.id || id;
-        const finalResolvedImageUrl = finalImageUrl || existing?.imageUrl || existing?.imageurl || null;
-        const finalResolvedThumbnailUrl = finalThumbnailUrl || existing?.thumbnailUrl || existing?.thumbnailurl || null;
+        const finalResolvedImageUrl = finalImageUrl || (existing && (existing.imageUrl || existing.imageurl)) || null;
+        const finalResolvedThumbnailUrl = finalThumbnailUrl || (existing && (existing.thumbnailUrl || existing.thumbnailurl)) || null;
 
+        // Cleanup vecchi asset
         if (existing && finalImageUrl && existing.imageUrl && existing.imageUrl !== finalImageUrl) {
             deleteAssetFile(existing.imageUrl);
         }
@@ -2343,12 +2307,8 @@ export async function saveMonster(monster: Partial<Monster> & { campaignId: stri
         const cleanDescStr = cleanAiHallucinatoryLoops(monster.description) || '';
 
         let mergedDescription = cleanDescStr;
-        if (!monster.overwrite && existing && existing.description) {
-            if (!cleanDescStr) {
-                mergedDescription = existing.description;
-            } else if (!cleanDescStr.includes(existing.description.slice(0, 60)) && !existing.description.includes(cleanDescStr.slice(0, 60))) {
-                mergedDescription = `${existing.description}\n\n${cleanDescStr}`.trim();
-            }
+        if (!monster.overwrite && existing && existing.description && !cleanDescStr) {
+            mergedDescription = existing.description;
         }
 
         const finalAc = (monster.armorClass && monster.armorClass !== '10' && monster.armorClass.trim() !== '')
@@ -2362,64 +2322,66 @@ export async function saveMonster(monster: Partial<Monster> & { campaignId: stri
             : (existing?.challenge || monster.challenge || '0');
 
         const monsterCols = getTableCols('Monster');
-        const d: Record<string, any> = { 
-            id: targetId, 
-            name: formattedName, 
-            type: cleanMonsterTypeStr, 
-            armorclass: finalAc, 
-            hitpoints: finalHp, 
-            challenge: finalCr, 
-            description: mergedDescription, 
-            imageurl: finalResolvedImageUrl, 
-            thumbnailurl: finalResolvedThumbnailUrl,
-            campaignid: monster.campaignId, 
-            createdat: existing?.createdAt || (monster as any).createdAt || now, 
-            updatedat: now 
+        const data: Record<string, any> = {
+            id: targetId,
+            campaignid: targetCampaignId,
+            name: formattedName,
+            type: cleanMonsterTypeStr,
+            armorclass: finalAc,
+            hitpoints: finalHp,
+            challenge: finalCr,
+            description: mergedDescription,
+            imageurl: finalResolvedImageUrl,
+            thumbnailurl: finalResolvedThumbnailUrl || finalResolvedImageUrl,
+            createdat: existing?.createdAt || existing?.createdat || now,
+            updatedat: now
         };
 
-        if (existing && !existing.isBase) {
-            const updateCols = ['name', 'type', 'armorclass', 'hitpoints', 'challenge', 'description', 'imageurl', 'thumbnailurl', 'updatedat'].filter(c => monsterCols.includes(c));
-            const setClause = updateCols.map(c => `${c} = ?`).join(', ');
-            db.prepare(`UPDATE Monster SET ${setClause} WHERE id = ?`).run(...updateCols.map(c => d[c]), targetId);
-        } else {
-            const insertCols = Object.keys(d).filter(c => monsterCols.includes(c.toLowerCase()));
-            const placeholders = insertCols.map(() => '?').join(',');
-            db.prepare(`INSERT INTO Monster (${insertCols.join(',')}) VALUES (${placeholders}) ON CONFLICT(name, campaignId) DO UPDATE SET ${insertCols.filter(c => !['id', 'name', 'campaignid', 'createdat'].includes(c.toLowerCase())).map(c => `${c}=excluded.${c}`).join(', ')}`).run(...insertCols.map(c => d[c]));
+        const insertCols = Object.keys(data).filter(c => monsterCols.includes(c.toLowerCase()));
+        const placeholders = insertCols.map(() => '?').join(',');
+        const updateSet = insertCols.filter(c => !['id', 'campaignid', 'createdat'].includes(c.toLowerCase())).map(c => `${c}=excluded.${c}`).join(', ');
+
+        db.prepare(`
+            INSERT INTO Monster (${insertCols.join(',')}) 
+            VALUES (${placeholders}) 
+            ON CONFLICT(id) DO UPDATE SET ${updateSet}, updatedAt=excluded.updatedAt
+        `).run(...insertCols.map(c => data[c]));
+
+        // Aggiorna anche il file JSON per persistenza legacy se stiamo scrivendo nel sistema
+        if (targetCampaignId === 'system') {
+            try {
+                const systemMonsters = readSystemJsonFile<any>('custom-monsters.json', 'monsters');
+                const sysIdx = systemMonsters.findIndex((m: any) => (m.name || '').toLowerCase().trim() === norm);
+                const updatedEntry = {
+                    id: targetId,
+                    name: formattedName,
+                    type: cleanMonsterTypeStr,
+                    armorClass: finalAc,
+                    hitPoints: finalHp,
+                    challenge: finalCr,
+                    description: mergedDescription,
+                    imageUrl: finalResolvedImageUrl,
+                    thumbnailUrl: finalResolvedThumbnailUrl,
+                    updatedAt: now
+                };
+                if (sysIdx > -1) {
+                    systemMonsters[sysIdx] = { ...systemMonsters[sysIdx], ...updatedEntry };
+                } else {
+                    systemMonsters.push(updatedEntry);
+                }
+                writeSystemJsonFile('custom-monsters.json', 'monsters', systemMonsters);
+            } catch {}
         }
 
-        try {
-            const systemMonsters = readSystemJsonFile<any>('custom-monsters.json', 'monsters');
-            const sysIdx = systemMonsters.findIndex((m: any) => (m.name || '').toLowerCase().trim() === norm);
-            const updatedEntry = {
-                id: targetId,
-                name: formattedName,
-                type: cleanMonsterTypeStr,
-                armorClass: finalAc,
-                hitPoints: finalHp,
-                challenge: finalCr,
-                description: mergedDescription,
-                imageUrl: finalResolvedImageUrl,
-                thumbnailUrl: finalResolvedThumbnailUrl,
-                updatedAt: now
-            };
-            if (sysIdx > -1) {
-                systemMonsters[sysIdx] = { ...systemMonsters[sysIdx], ...updatedEntry };
-            } else {
-                systemMonsters.push(updatedEntry);
-            }
-            writeSystemJsonFile('custom-monsters.json', 'monsters', systemMonsters);
-        } catch {}
-
-        return actionResponse({ id: targetId, imageUrl: finalResolvedImageUrl, thumbnailUrl: finalResolvedThumbnailUrl, conflict: false });
-    } catch (e: any) { 
-        console.error("Errore saveMonster:", e);
-        return actionResponse(null, e.message); 
+        return actionResponse({ success: true, id: targetId, name: formattedName, conflict: false });
+    } catch (e: any) {
+        console.error("Error in saveMonster:", e);
+        return actionResponse(null, e.message);
     }
 }
 
 export async function checkIfMonsterExists(name: string, campaignId: string) {
     try {
-        console.log("DEBUG: checkIfMonsterExists called with:", name, campaignId);
         const formattedName = formatTitleOrTag(name);
         const norm = formattedName.toLowerCase().trim();
         const simplify = (str: string) => (str || '').toLowerCase().replace(/ck/g, 'k').replace(/[^a-z0-9]/g, '');
