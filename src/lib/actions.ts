@@ -1,7 +1,7 @@
 
 'use server';
 
-import db, { dbPath, getAppSetting, setAppSetting, logApiUsage } from '@/lib/db';
+import db, { dbPath, getAppSetting, setAppSetting, logApiUsage, ensureSystemCampaignRow } from '@/lib/db';
 import { testGeminiModel, getGenAI, safeGenerateContent, getActiveFlashModel } from '@/ai/genai-client';
 import { updateGenkitActiveModel } from '@/ai/genkit';
 import { initializeCampaign as initializeCampaignFlow } from '@/ai/flows/initialize-campaign';
@@ -2156,6 +2156,7 @@ export async function deepNpcElaborationAction(npcId: string, campaignId: string
 
 export async function saveMagicItem(item: Partial<MagicItem> & { campaignId: string }) {
     try {
+        ensureSystemCampaignRow();
         const id = item.id || randomUUID();
         const now = new Date().toISOString();
         const rawName = item.name || 'Oggetto';
@@ -2264,6 +2265,7 @@ export async function deleteMagicItem(id: string) {
 
 export async function saveMonster(monster: Partial<Monster> & { campaignId: string; overwrite?: boolean; target?: 'system' | 'campaign' }) {
     try {
+        ensureSystemCampaignRow();
         const { debugLog } = await import('./debug-logger');
         debugLog("DEBUG: saveMonster called with:", monster);
         
@@ -2477,6 +2479,7 @@ export async function deleteMonster(idOrName: string, monsterName?: string, camp
 
 export async function saveSpell(spell: Partial<Spell> & { campaignId: string }) {
     try {
+        ensureSystemCampaignRow();
         const now = new Date().toISOString();
         const spellCols = getTableCols('CustomSpell');
         
@@ -2542,6 +2545,7 @@ export async function deleteSpell(id: string) {
 
 export async function saveSkill(skill: Partial<Skill> & { campaignId: string }) {
     try {
+        ensureSystemCampaignRow();
         const now = new Date().toISOString();
         const skillCols = getTableCols('CustomSkill');
         
@@ -3020,13 +3024,17 @@ export async function relinkImagesAction() {
                     const fileName = parts[parts.length - 1];
                     if (files.includes(fileName)) {
                         db.prepare("UPDATE MagicItem SET imageUrl = ? WHERE id = ?").run(`/api/assets/${fileName}`, it.id);
-                        relinkedCount++;
                     }
                 }
             }
+            ensureSystemCampaignRow();
         })();
+        ensureSystemCampaignRow();
         return actionResponse({ relinkedCount });
     } catch (e: any) { return actionResponse(null, e.message); }
+    finally {
+        db.exec("PRAGMA foreign_keys = ON");
+    }
 }
 
 export async function toggleItemPossession(campaignId: string, itemName: string) {
@@ -4955,6 +4963,7 @@ export async function saveCustomMonsterAction(data: {
 export async function consolidateAllDataToDbAction() {
     'use server';
     try {
+        ensureSystemCampaignRow();
         const now = new Date().toISOString();
         const campaignId = 'system';
         const colsMonsters = getTableCols('Monster');
@@ -4963,6 +4972,7 @@ export async function consolidateAllDataToDbAction() {
         const colsSkills = getTableCols('CustomSkill');
 
         db.transaction(() => {
+            ensureSystemCampaignRow();
             // 1. Monsters
             const baseMonsters = getBaseMonsters();
             const insertMonster = db.prepare(`INSERT OR IGNORE INTO Monster (${colsMonsters.join(',')}) VALUES (${colsMonsters.map(() => '?').join(',')})`);

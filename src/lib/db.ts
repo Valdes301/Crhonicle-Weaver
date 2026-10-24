@@ -436,14 +436,18 @@ db.exec(`
 );
 
 // Inizializzazione Campagna di Sistema (Spostata all'inizio per garantire l'integrità dei vincoli FK)
-try {
-    db.prepare(`
-        INSERT OR IGNORE INTO Campaign (id, name, setting, description, summary)
-        VALUES ('system', 'Sistema', 'Compendio Globale', 'Campagna tecnica per i dati condivisi', 'Archivio globale dei dati di gioco.')
-    `).run();
-} catch (e) {
-    console.error("[DB Init] Errore critico inserimento Campagna Sistema:", e);
+export function ensureSystemCampaignRow() {
+    try {
+        db.prepare(`
+            INSERT OR IGNORE INTO Campaign (id, name, setting, description, summary)
+            VALUES ('system', 'Sistema', 'Compendio Globale', 'Campagna tecnica per i dati condivisi', 'Archivio globale dei dati di gioco.')
+        `).run();
+    } catch (e) {
+        console.error("[DB Init] Errore inserimento Campagna Sistema:", e);
+    }
 }
+
+ensureSystemCampaignRow();
 
 // --- SISTEMA DI MIGRAZIONE ROBUSTO ---
 const migrations = [

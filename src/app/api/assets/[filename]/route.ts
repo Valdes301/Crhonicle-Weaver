@@ -6,10 +6,10 @@ export const dynamic = 'force-dynamic';
 
 export async function GET(
     request: NextRequest,
-    { params }: { params: Promise<{ filename: string }> }
+    context: { params: Promise<{ filename: string }> | { filename: string } }
 ) {
-    const rawParams = await params;
-    const rawFilename = rawParams.filename || '';
+    const rawParams = await (context.params as any);
+    const rawFilename = rawParams?.filename || '';
     const filename = decodeURIComponent(rawFilename);
 
     if (!filename || filename.includes('..')) {
