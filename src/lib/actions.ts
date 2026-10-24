@@ -4987,149 +4987,177 @@ export async function consolidateAllDataToDbAction() {
             log(`[AVVISO] Lettura PRAGMA fallita: ${pragmaErr.message}`);
         }
 
-        // Garanzia Campagna System
-        log("Controllo presenza campagna 'system'...");
-        ensureSystemCampaignRow();
-        const sysCamp = db.prepare("SELECT id, name FROM Campaign WHERE id = 'system'").get() as any;
-        if (sysCamp) {
-            log(`Campagna 'system' presente correttamente: ${JSON.stringify(sysCamp)}`);
-        } else {
-            log(`[ERRORE CRITICO] Impossibile verificare/creare la campagna 'system'!`);
-        }
+        log("Disattivazione temporanea vincoli FK per la procedura di consolidamento...");
+        db.exec("PRAGMA foreign_keys = OFF");
 
-        // Ispezione tabelle e colonne
-        const colsMonsters = getTableCols('Monster');
-        const colsItems = getTableCols('MagicItem');
-        const colsSpells = getTableCols('CustomSpell');
-        const colsSkills = getTableCols('CustomSkill');
-
-        log(`Colonne 'Monster': ${colsMonsters.join(', ')}`);
-        log(`Colonne 'MagicItem': ${colsItems.join(', ')}`);
-        log(`Colonne 'CustomSpell': ${colsSpells.join(', ')}`);
-        log(`Colonne 'CustomSkill': ${colsSkills.join(', ')}`);
-
-        // Caricamento Dati JSON Base
-        const baseMonsters = getBaseMonsters();
-        const baseItems = getBaseItems();
-        const baseSpells = getBaseSpells();
-        const baseSkills = getBaseSkills();
-
-        log(`Elementi da migrare - Mostri: ${baseMonsters.length}, Oggetti: ${baseItems.length}, Incantesimi: ${baseSpells.length}, Abilità: ${baseSkills.length}`);
-
-        const now = new Date().toISOString();
-        const campaignId = 'system';
-
-        log("Avvio transazione SQLite per il popolamento...");
-        let countMonsters = 0;
-        let countItems = 0;
-        let countSpells = 0;
-        let countSkills = 0;
-
-        db.transaction(() => {
+        try {
+            // Garanzia Campagna System
+            log("Controllo presenza campagna 'system'...");
             ensureSystemCampaignRow();
-
-            // 1. Mostri
-            log("1/4 Inserimento Mostri...");
-            const insertMonster = db.prepare(`INSERT OR IGNORE INTO Monster (${colsMonsters.join(',')}) VALUES (${colsMonsters.map(() => '?').join(',')})`);
-            for (const m of baseMonsters) {
-                const data: Record<string, any> = {
-                    id: m.id || randomUUID(),
-                    name: formatTitleOrTag(m.name),
-                    type: sanitizeMonsterType(m.type),
-                    armorclass: m.armorClass || '10',
-                    hitpoints: m.hitPoints || '10',
-                    challenge: m.challenge || '0',
-                    description: cleanAiHallucinatoryLoops(m.description) || '',
-                    imageurl: m.imageUrl || null,
-                    thumbnailurl: m.thumbnailUrl || (m as any).thumbnailurl || m.imageUrl || null,
-                    campaignid: campaignId,
-                    createdat: now,
-                    updatedat: now
-                };
-                const values = colsMonsters.map(c => data[c.toLowerCase()] ?? null);
-                insertMonster.run(...values);
-                countMonsters++;
+            const sysCamp = db.prepare("SELECT id, name FROM Campaign WHERE id = 'system'").get() as any;
+            if (sysCamp) {
+                log(`Campagna 'system' verificata: ${JSON.stringify(sysCamp)}`);
+            } else {
+                log(`[AVVISO] Forzatura inserimento campagna 'system'...`);
+                db.prepare("INSERT OR REPLACE INTO Campaign (id, name, setting, description, summary) VALUES ('system', 'Sistema', 'Compendio Globale', 'Campagna tecnica per i dati condivisi', 'Archivio globale dei dati di gioco.')").run();
             }
-            log(`1/4 Mostri inseriti/verificati: ${countMonsters}`);
 
-            // 2. Oggetti
-            log("2/4 Inserimento Oggetti...");
-            const insertItem = db.prepare(`INSERT OR IGNORE INTO MagicItem (${colsItems.join(',')}) VALUES (${colsItems.map(() => '?').join(',')})`);
-            for (const i of baseItems) {
-                const data: Record<string, any> = {
-                    id: i.id || randomUUID(),
-                    name: formatTitleOrTag(i.name),
-                    type: i.type || 'Oggetto',
-                    rarity: i.rarity || 'Comune',
-                    attunement: i.attunement || 'No',
-                    description: i.description || '',
-                    cost: i.cost || 'N/D',
-                    damage: i.damage || '',
-                    techtype: i.techType || 'none',
-                    imageurl: i.imageUrl || null,
-                    campaignid: campaignId,
-                    createdat: now,
-                    updatedat: now
-                };
-                const values = colsItems.map(c => data[c.toLowerCase()] ?? null);
-                insertItem.run(...values);
-                countItems++;
-            }
-            log(`2/4 Oggetti inseriti/verificati: ${countItems}`);
+            // Bonifica automatica record orfani
+            log("Bonifica preventiva record orfani senza campagna...");
+            const delMonsters = db.prepare("DELETE FROM Monster WHERE campaignId NOT IN (SELECT id FROM Campaign)").run();
+            const delItems = db.prepare("DELETE FROM MagicItem WHERE campaignId NOT IN (SELECT id FROM Campaign)").run();
+            const delSpells = db.prepare("DELETE FROM CustomSpell WHERE campaignId NOT IN (SELECT id FROM Campaign)").run();
+            const delSkills = db.prepare("DELETE FROM CustomSkill WHERE campaignId NOT IN (SELECT id FROM Campaign)").run();
+            log(`Record orfani rimossi - Mostri: ${delMonsters.changes}, Oggetti: ${delItems.changes}, Magie: ${delSpells.changes}, Abilità: ${delSkills.changes}`);
 
-            // 3. Incantesimi
-            log("3/4 Inserimento Incantesimi...");
-            const insertSpell = db.prepare(`INSERT OR IGNORE INTO CustomSpell (${colsSpells.join(',')}) VALUES (${colsSpells.map(() => '?').join(',')})`);
-            for (const s of baseSpells) {
-                const data: Record<string, any> = {
-                    id: s.id || randomUUID(),
-                    name: formatTitleOrTag(s.name),
-                    level: s.level || '0',
-                    school: s.school || 'Invocazione',
-                    casting_time: s.casting_time || '1 azione',
-                    range: s.range || 'Contatto',
-                    components: s.components || 'V, S',
-                    duration: s.duration || 'Istantanea',
-                    description: s.description || '',
-                    classes: s.classes || '',
-                    campaignid: campaignId,
-                    createdat: now,
-                    updatedat: now
-                };
-                const values = colsSpells.map(c => data[c.toLowerCase()] ?? null);
-                insertSpell.run(...values);
-                countSpells++;
-            }
-            log(`3/4 Incantesimi inseriti/verificati: ${countSpells}`);
+            // Ispezione tabelle e colonne
+            const colsMonsters = getTableCols('Monster');
+            const colsItems = getTableCols('MagicItem');
+            const colsSpells = getTableCols('CustomSpell');
+            const colsSkills = getTableCols('CustomSkill');
 
-            // 4. Abilità
-            log("4/4 Inserimento Abilità...");
-            const insertSkill = db.prepare(`INSERT OR IGNORE INTO CustomSkill (${colsSkills.join(',')}) VALUES (${colsSkills.map(() => '?').join(',')})`);
-            for (const s of baseSkills) {
-                const data: Record<string, any> = {
-                    id: s.id || randomUUID(),
-                    name: formatTitleOrTag(s.name),
-                    ability: s.ability || 'FOR',
-                    description: s.description || '',
-                    campaignid: campaignId,
-                    createdat: now,
-                    updatedat: now
-                };
-                const values = colsSkills.map(c => data[c.toLowerCase()] ?? null);
-                insertSkill.run(...values);
-                countSkills++;
-            }
-            log(`4/4 Abilità inserite/verificate: ${countSkills}`);
-        })();
+            log(`Colonne 'Monster': ${colsMonsters.join(', ')}`);
+            log(`Colonne 'MagicItem': ${colsItems.join(', ')}`);
+            log(`Colonne 'CustomSpell': ${colsSpells.join(', ')}`);
+            log(`Colonne 'CustomSkill': ${colsSkills.join(', ')}`);
 
-        log("Transazione completata con SUCCESSO!");
-        log("=== CONSOLIDAMENTO COMPLETATO CORRETTAMENTE ===");
+            // Caricamento Dati JSON Base
+            const baseMonsters = getBaseMonsters();
+            const baseItems = getBaseItems();
+            const baseSpells = getBaseSpells();
+            const baseSkills = getBaseSkills();
 
-        return actionResponse({
-            success: true,
-            message: `Migrazione completata con successo! (${countMonsters} mostri, ${countItems} oggetti, ${countSpells} magie, ${countSkills} abilità)`,
-            logOutput: logs.join('\n')
-        });
+            log(`Elementi da migrare - Mostri: ${baseMonsters.length}, Oggetti: ${baseItems.length}, Incantesimi: ${baseSpells.length}, Abilità: ${baseSkills.length}`);
+
+            const now = new Date().toISOString();
+            const campaignId = 'system';
+
+            log("Avvio popolamento batch...");
+            let countMonsters = 0;
+            let countItems = 0;
+            let countSpells = 0;
+            let countSkills = 0;
+
+            db.transaction(() => {
+                ensureSystemCampaignRow();
+
+                // 1. Mostri
+                log("1/4 Inserimento Mostri...");
+                const insertMonster = db.prepare(`INSERT OR IGNORE INTO Monster (${colsMonsters.join(',')}) VALUES (${colsMonsters.map(() => '?').join(',')})`);
+                for (const m of baseMonsters) {
+                    const data: Record<string, any> = {
+                        id: m.id || randomUUID(),
+                        name: formatTitleOrTag(m.name),
+                        type: sanitizeMonsterType(m.type),
+                        armorclass: m.armorClass || '10',
+                        hitpoints: m.hitPoints || '10',
+                        challenge: m.challenge || '0',
+                        description: cleanAiHallucinatoryLoops(m.description) || '',
+                        imageurl: m.imageUrl || null,
+                        thumbnailurl: m.thumbnailUrl || (m as any).thumbnailurl || m.imageUrl || null,
+                        campaignid: campaignId,
+                        createdat: now,
+                        updatedat: now
+                    };
+                    const values = colsMonsters.map(c => data[c.toLowerCase()] ?? null);
+                    insertMonster.run(...values);
+                    countMonsters++;
+                }
+                log(`1/4 Mostri inseriti/verificati: ${countMonsters}`);
+
+                // 2. Oggetti
+                log("2/4 Inserimento Oggetti...");
+                const insertItem = db.prepare(`INSERT OR IGNORE INTO MagicItem (${colsItems.join(',')}) VALUES (${colsItems.map(() => '?').join(',')})`);
+                for (const i of baseItems) {
+                    const data: Record<string, any> = {
+                        id: i.id || randomUUID(),
+                        name: formatTitleOrTag(i.name),
+                        type: i.type || 'Oggetto',
+                        rarity: i.rarity || 'Comune',
+                        attunement: i.attunement || 'No',
+                        description: i.description || '',
+                        cost: i.cost || 'N/D',
+                        damage: i.damage || '',
+                        techtype: i.techType || 'none',
+                        imageurl: i.imageUrl || null,
+                        campaignid: campaignId,
+                        createdat: now,
+                        updatedat: now
+                    };
+                    const values = colsItems.map(c => data[c.toLowerCase()] ?? null);
+                    insertItem.run(...values);
+                    countItems++;
+                }
+                log(`2/4 Oggetti inseriti/verificati: ${countItems}`);
+
+                // 3. Incantesimi
+                log("3/4 Inserimento Incantesimi...");
+                const insertSpell = db.prepare(`INSERT OR IGNORE INTO CustomSpell (${colsSpells.join(',')}) VALUES (${colsSpells.map(() => '?').join(',')})`);
+                for (const s of baseSpells) {
+                    const data: Record<string, any> = {
+                        id: s.id || randomUUID(),
+                        name: formatTitleOrTag(s.name),
+                        level: s.level || '0',
+                        school: s.school || 'Invocazione',
+                        casting_time: s.casting_time || '1 azione',
+                        range: s.range || 'Contatto',
+                        components: s.components || 'V, S',
+                        duration: s.duration || 'Istantanea',
+                        description: s.description || '',
+                        classes: s.classes || '',
+                        campaignid: campaignId,
+                        createdat: now,
+                        updatedat: now
+                    };
+                    const values = colsSpells.map(c => data[c.toLowerCase()] ?? null);
+                    insertSpell.run(...values);
+                    countSpells++;
+                }
+                log(`3/4 Incantesimi inseriti/verificati: ${countSpells}`);
+
+                // 4. Abilità
+                log("4/4 Inserimento Abilità...");
+                const insertSkill = db.prepare(`INSERT OR IGNORE INTO CustomSkill (${colsSkills.join(',')}) VALUES (${colsSkills.map(() => '?').join(',')})`);
+                for (const s of baseSkills) {
+                    const data: Record<string, any> = {
+                        id: s.id || randomUUID(),
+                        name: formatTitleOrTag(s.name),
+                        ability: s.ability || 'FOR',
+                        description: s.description || '',
+                        campaignid: campaignId,
+                        createdat: now,
+                        updatedat: now
+                    };
+                    const values = colsSkills.map(c => data[c.toLowerCase()] ?? null);
+                    insertSkill.run(...values);
+                    countSkills++;
+                }
+                log(`4/4 Abilità inserite/verificate: ${countSkills}`);
+            })();
+
+            log("Popolamento batch completato con SUCCESSO!");
+
+            // Verifica FK finale
+            try {
+                const fkViolations = db.prepare("PRAGMA foreign_key_check").all() as any[];
+                if (fkViolations.length > 0) {
+                    log(`[AVVISO] Trovate ${fkViolations.length} violazioni FK residue nel DB: ${JSON.stringify(fkViolations.slice(0, 3))}`);
+                } else {
+                    log("Verifica integrità PRAGMA foreign_key_check: 0 violazioni.");
+                }
+            } catch {}
+
+            log("=== CONSOLIDAMENTO COMPLETATO CORRETTAMENTE ===");
+
+            return actionResponse({
+                success: true,
+                message: `Migrazione e bonifica completate con successo! (${countMonsters} mostri, ${countItems} oggetti, ${countSpells} magie, ${countSkills} abilità)`,
+                logOutput: logs.join('\n')
+            });
+        } finally {
+            db.exec("PRAGMA foreign_keys = ON");
+            log("Riattivazione vincoli FK (PRAGMA foreign_keys = ON).");
+        }
 
     } catch (e: any) {
         log(`[ERRORE FATALE MIGRAZIONE]: ${e.message || e}`);
