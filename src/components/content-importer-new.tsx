@@ -70,7 +70,7 @@ import { sanitizeMonsterType, sanitizeMonsterName, cleanAiHallucinatoryLoops } f
 import { Label } from '@/components/ui/label';
 import { Textarea } from '@/components/ui/textarea';
 import { ImageCropperModal } from './image-cropper-modal';
-import { TokenFramerModal } from './token-framer-modal';
+import { ThumbnailFramerModal } from './thumbnail-framer-modal';
 import AiLogMonitor from './AiLogMonitor';
 
 interface ContentImporterNewProps {
@@ -248,6 +248,7 @@ export function ContentImporterNew({ campaignId }: ContentImporterNewProps) {
 
   // Ispezione Log di Debug Temporaneo (data/last_scan_debug.json)
   const [showDebugModal, setShowDebugModal] = useState<boolean>(false);
+  const [duplicateDialog, setDuplicateDialog] = useState<{ isOpen: boolean; monster: ExtractedMonsterCard; existingName: string; existingId: string } | null>(null);
   const [debugLogData, setDebugLogData] = useState<any>(null);
   const [isLoadingDebugLog, setIsLoadingDebugLog] = useState<boolean>(false);
   const [copiedLog, setCopiedLog] = useState<boolean>(false);
@@ -2012,9 +2013,21 @@ export function ContentImporterNew({ campaignId }: ContentImporterNewProps) {
   };
 
   // Salvataggio Singolo per categoria
-  const handleSaveMonster = async (monster: ExtractedMonsterCard, target: 'campaign' | 'global') => {
+  const handleSaveMonster = async (monster: ExtractedMonsterCard, target: 'campaign' | 'global' = 'campaign') => {
     setMonsters(prev => prev.map(m => m.id === monster.id ? { ...m, isSaving: true } : m));
     try {
+      const checkRes = await actions.checkIfMonsterExists(monster.name, campaignId);
+      if (checkRes.success && checkRes.data?.conflict) {
+          setDuplicateDialog({
+            isOpen: true,
+            monster,
+            existingName: checkRes.data.existingName,
+            existingId: checkRes.data.existingId
+          });
+          setMonsters(prev => prev.map(m => m.id === monster.id ? { ...m, isSaving: false } : m));
+          return;
+      }
+      
       const res = await actions.saveMonster({
         campaignId,
         name: monster.name,
@@ -2025,16 +2038,15 @@ export function ContentImporterNew({ campaignId }: ContentImporterNewProps) {
         description: cleanAiHallucinatoryLoops(monster.description),
         imageUrl: monster.imageUrl || undefined,
         thumbnailUrl: monster.thumbnailUrl || undefined,
-        target: target === 'campaign' ? 'campaign' : 'system'
       });
       if (res.success) {
         setMonsters(prev => prev.map(m => m.id === monster.id ? { 
           ...m, 
-          savedCampaign: target === 'campaign' ? true : m.savedCampaign,
-          savedGlobal: target === 'global' ? true : m.savedGlobal,
+          savedCampaign: true,
+          savedGlobal: true,
           isSaving: false 
         } : m));
-        toast({ title: `"${monster.name}" salvato nel ${target === 'campaign' ? 'Bestiario di Campagna' : 'Bestiario Globale'}!` });
+        toast({ title: `"${monster.name}" salvato nel Bestiario!` });
         triggerGlobalSync();
       } else {
         throw new Error(res.error || "Errore salvataggio mostro");
@@ -2043,6 +2055,34 @@ export function ContentImporterNew({ campaignId }: ContentImporterNewProps) {
       setMonsters(prev => prev.map(m => m.id === monster.id ? { ...m, isSaving: false } : m));
       toast({ variant: 'destructive', title: "Errore Salvataggio", description: e.message });
     }
+  };
+
+  const handleConfirmOverwrite = async () => {
+        if (!duplicateDialog) return;
+        const { monster, existingId } = duplicateDialog;
+        setDuplicateDialog(null);
+        setMonsters(prev => prev.map(m => m.id === monster.id ? { ...m, isSaving: true } : m));
+        try {
+            await actions.saveMonster({
+                campaignId,
+                id: existingId,
+                overwrite: true,
+                name: monster.name,
+                type: sanitizeMonsterType(monster.type),
+                armorClass: monster.armorClass,
+                hitPoints: monster.hitPoints,
+                challenge: monster.challenge,
+                description: cleanAiHallucinatoryLoops(monster.description),
+                imageUrl: monster.imageUrl || undefined,
+                thumbnailUrl: monster.thumbnailUrl || undefined,
+            });
+            setMonsters(prev => prev.map(m => m.id === monster.id ? { ...m, savedCampaign: true, savedGlobal: true, isSaving: false } : m));
+            toast({ title: `"${monster.name}" sovrascritto con successo!` });
+            triggerGlobalSync();
+        } catch (e: any) {
+            setMonsters(prev => prev.map(m => m.id === monster.id ? { ...m, isSaving: false } : m));
+            toast({ variant: 'destructive', title: "Errore Sovrascrittura", description: e.message });
+        }
   };
 
   const handleSaveEquipment = async (item: ExtractedEquipmentCard, target: 'campaign' | 'global') => {
@@ -3083,11 +3123,13 @@ export function ContentImporterNew({ campaignId }: ContentImporterNewProps) {
                                   <button
                                     type="button"
                                     onClick={() => {
-                                      const pages = m.pageImages && m.pageImages.length > 0 ? m.pageImages : (m.rawPageImage ? [m.rawPageImage] : []);
+                                      const pages = m.pageImages && m.pageImages.length > 0
+                                        ? m.pageImages
+                                        : (m.rawPageImage ? [m.rawPageImage] : (m.imageUrl ? [m.imageUrl] : []));
                                       setFramerModal({
                                         isOpen: true,
                                         monsterId: m.id,
-                                        imageSrc: (m.rawPageImage || pages[0])!,
+                                        imageSrc: (m.rawPageImage || (pages && pages[0]) || m.imageUrl)!,
                                         name: m.name,
                                         availablePages: pages
                                       });
@@ -3196,7 +3238,7 @@ export function ContentImporterNew({ campaignId }: ContentImporterNewProps) {
                                     setFramerModal({
                                       isOpen: true,
                                       monsterId: m.id,
-                                      imageSrc: (m.imageUrl || m.rawPageImage || pages[0])!,
+                                      imageSrc: (m.rawPageImage || (pages && pages[0]) || m.imageUrl)!,
                                       name: m.name,
                                       availablePages: pages
                                     });
@@ -4266,13 +4308,13 @@ export function ContentImporterNew({ campaignId }: ContentImporterNewProps) {
 
       {/* Modale Miniatura */}
       {framerModal.isOpen && (
-        <TokenFramerModal
+        <ThumbnailFramerModal
           isOpen={framerModal.isOpen}
           onClose={() => setFramerModal(prev => ({ ...prev, isOpen: false }))}
           imageSrc={framerModal.imageSrc}
           availablePages={framerModal.availablePages}
           title={`Miniatura: ${framerModal.name}`}
-          onSaveToken={(tokenDataUrl) => {
+          onSaveThumbnail={(tokenDataUrl) => {
             setMonsters(prev => prev.map(m => m.id === framerModal.monsterId ? { ...m, thumbnailUrl: tokenDataUrl } : m));
             setFramerModal(prev => ({ ...prev, isOpen: false }));
             toast({ title: "Miniatura Aggiornata!" });
@@ -4295,6 +4337,21 @@ export function ContentImporterNew({ campaignId }: ContentImporterNewProps) {
           }}
         />
       )}
+        <Dialog open={!!duplicateDialog} onOpenChange={(open) => !open && setDuplicateDialog(null)}>
+          <DialogContent>
+            <DialogHeader>
+              <DialogTitle>Mostro Duplicato Rilevato</DialogTitle>
+              <DialogDescription>
+                Il mostro "{duplicateDialog?.existingName}" esiste già nel Bestiario.
+                Vuoi sovrascriverlo con i nuovi dati? Questa operazione non può essere annullata.
+              </DialogDescription>
+            </DialogHeader>
+            <DialogFooter>
+              <Button variant="outline" onClick={() => setDuplicateDialog(null)}>Annulla</Button>
+              <Button variant="destructive" onClick={handleConfirmOverwrite}>Sovrascrivi</Button>
+            </DialogFooter>
+          </DialogContent>
+        </Dialog>
     </div>
   );
 }

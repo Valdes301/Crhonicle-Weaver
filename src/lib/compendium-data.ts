@@ -51,6 +51,22 @@ export function getLiveCustomSystemData<T>(fileName: string, key: string): T[] {
 
 export const getBaseSpells = (): Spell[] => {
   const map = new Map<string, Spell>();
+
+  // 1. Try DB first (Consolidated data)
+  if (typeof window === 'undefined') {
+    try {
+      const db = require('./db').default;
+      const dbSpells = db.prepare("SELECT * FROM CustomSpell WHERE campaignId = 'system'").all() as any[];
+      if (dbSpells.length > 0) {
+        dbSpells.forEach(s => {
+          map.set(s.name.toLowerCase().trim(), { ...s, source: 'base' as const });
+        });
+        return Array.from(map.values());
+      }
+    } catch (e) {}
+  }
+
+  // 2. Fallback to JSON
   for (const s of (spellData.spells as any[])) {
     if (s && s.name) {
       map.set(s.name.toLowerCase().trim(), { ...s, source: 'base' as const });
@@ -67,10 +83,37 @@ export const getBaseSpells = (): Spell[] => {
 export const allArmor: Armor[] = equipmentData.armor as Armor[];
 export const allWeapons: Weapon[] = equipmentData.weapons as Weapon[];
 
-export const getBaseSkills = (): Skill[] => (skillsData.skills as any[]).map(s => ({ ...s, source: 'base' as const }));
+export const getBaseSkills = (): Skill[] => {
+  // Try DB first
+  if (typeof window === 'undefined') {
+    try {
+      const db = require('./db').default;
+      const dbSkills = db.prepare("SELECT * FROM CustomSkill WHERE campaignId = 'system'").all() as any[];
+      if (dbSkills.length > 0) {
+        return dbSkills.map(s => ({ ...s, source: 'base' as const }));
+      }
+    } catch (e) {}
+  }
+  return (skillsData.skills as any[]).map(s => ({ ...s, source: 'base' as const }));
+};
 
 export const getBaseItems = (): MagicItem[] => {
   const map = new Map<string, MagicItem>();
+
+  // 1. Try DB first
+  if (typeof window === 'undefined') {
+    try {
+      const db = require('./db').default;
+      const dbItems = db.prepare("SELECT * FROM MagicItem WHERE campaignId = 'system'").all() as any[];
+      if (dbItems.length > 0) {
+        dbItems.forEach(i => {
+          map.set(i.name.toLowerCase().trim(), { ...i, source: 'base' as const });
+        });
+        return Array.from(map.values());
+      }
+    } catch (e) {}
+  }
+
   const rawBase = [
     ...(commonItemData.commonItems as MagicItem[]),
     ...magicItemData.magicItems,
@@ -97,6 +140,20 @@ export function getDeletedMonsters(): string[] {
 export const getBaseMonsters = (): Monster[] => {
   const deleted = getDeletedMonsters();
   const map = new Map<string, Monster>();
+
+  // 1. Try DB first
+  if (typeof window === 'undefined') {
+    try {
+      const db = require('./db').default;
+      const dbMonsters = db.prepare("SELECT * FROM Monster WHERE campaignId = 'system'").all() as any[];
+      if (dbMonsters.length > 0) {
+        dbMonsters.forEach(m => {
+          map.set(m.name.toLowerCase().trim(), { ...m, source: 'base' as const });
+        });
+        return Array.from(map.values()).filter(m => m && m.name && !deleted.includes(m.name.toLowerCase().trim()));
+      }
+    } catch (e) {}
+  }
   
   for (const m of (monsterData.monsters as unknown as Monster[])) {
     if (m && m.name) {

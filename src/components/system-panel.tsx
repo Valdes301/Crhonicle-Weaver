@@ -129,6 +129,14 @@ export function SystemPanel({
             <Hammer className="h-4 w-4 shrink-0" />
             <span>Compendio Homebrew</span>
           </TabsTrigger>
+          <TabsTrigger 
+            id="tab-system-maintenance"
+            value="maintenance" 
+            className="w-full h-auto py-2.5 px-2.5 flex items-center justify-center gap-1.5 rounded-lg data-[state=active]:bg-rose-600/20 data-[state=active]:text-rose-400 font-medium text-xs sm:text-sm whitespace-normal transition-all text-center"
+          >
+            <Database className="h-4 w-4 shrink-0" />
+            <span>Manutenzione</span>
+          </TabsTrigger>
         </TabsList>
 
         {/* Scheda 1: Controlli, Sicurezza e Backup */}
@@ -410,6 +418,70 @@ export function SystemPanel({
         {/* Scheda 4: Compendio Homebrew */}
         <TabsContent value="homebrew" className="space-y-4 mt-0">
           <HomebrewCompendium campaign={campaign} />
+        </TabsContent>
+
+        {/* Scheda 5: Manutenzione & Migrazione */}
+        <TabsContent value="maintenance" className="space-y-6 mt-0">
+          <div className="space-y-3">
+            <div className="flex items-center gap-2 text-sm font-semibold text-rose-400 uppercase tracking-wider">
+              <Database className="h-4 w-4 text-rose-400" /> Database & Migrazione
+            </div>
+            <Card className="bg-card/75 backdrop-blur-md border border-rose-900/30 hover:border-rose-900/50 transition-all">
+              <CardHeader className="p-4 pb-2">
+                <CardTitle className="text-base flex items-center gap-2 text-foreground font-headline">
+                  <Database className="h-5 w-5 text-rose-400" />
+                  Consolidamento Database Unificato
+                </CardTitle>
+                <CardDescription className="text-xs">
+                  Questa operazione migrerà tutti i mostri, oggetti, magie e abilità dai file JSON di sistema nel database SQLite. È un'operazione necessaria per unificare i dati e permettere ricerche globali istantanee.
+                </CardDescription>
+              </CardHeader>
+              <CardContent className="p-4 pt-2">
+                <AlertDialog>
+                  <AlertDialogTrigger asChild>
+                    <Button 
+                      variant="destructive"
+                      className="w-full sm:w-auto gap-2"
+                    >
+                      <Database className="h-4 w-4" />
+                      Esegui Consolidamento Dati
+                    </Button>
+                  </AlertDialogTrigger>
+                  <AlertDialogContent className="w-[95vw]">
+                    <AlertDialogHeader>
+                      <AlertDialogTitle>Sei sicuro di voler procedere?</AlertDialogTitle>
+                      <AlertDialogDescription>
+                        Tutti i dati presenti nei file JSON verranno copiati nel database. Eventuali duplicati verranno ignorati (basato sul nome). Questa operazione è consigliata solo una volta per migrare i dati esistenti.
+                      </AlertDialogDescription>
+                    </AlertDialogHeader>
+                    <AlertDialogFooter>
+                      <AlertDialogCancel>Annulla</AlertDialogCancel>
+                      <AlertDialogAction onClick={async () => {
+                        const res = await actions.consolidateAllDataToDbAction();
+                        if (res.success) {
+                          toast({ title: "Migrazione completata!", description: res.data?.message });
+                        } else {
+                          toast({ variant: 'destructive', title: "Errore migrazione", description: res.error });
+                        }
+                      }}>Procedi con la Migrazione</AlertDialogAction>
+                    </AlertDialogFooter>
+                  </AlertDialogContent>
+                </AlertDialog>
+              </CardContent>
+            </Card>
+          </div>
+
+          <Card className="bg-muted/30 border-dashed border-border/50">
+            <CardContent className="p-4 flex gap-3 items-start">
+              <Sparkles className="h-5 w-5 text-amber-400 shrink-0 mt-0.5" />
+              <div className="space-y-1">
+                <p className="text-xs font-semibold">Nota di Sincronizzazione</p>
+                <p className="text-[10px] text-muted-foreground leading-relaxed">
+                  Dopo il consolidamento, l'app darà la priorità ai dati presenti nel Database. I file JSON rimarranno sul disco ma non verranno più aggiornati dalle nuove operazioni di salvataggio.
+                </p>
+              </div>
+            </CardContent>
+          </Card>
         </TabsContent>
       </Tabs>
     </div>

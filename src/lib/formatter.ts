@@ -44,19 +44,29 @@ export function formatNarrativeText(rawText: string | null | undefined): string 
   text = text.replace(/(?<!_)_\s+([^_\n\s]+?)\s+_(?!_)/g, '_$1_');
 
   // 8. Correzione punteggiatura prima/dopo grassetto/corsivo
-  // Es: "**testo** ," -> "**testo**,"
   text = text.replace(/\*\*\s+([,\.\:\;\!\?])/g, '**$1');
 
+  // Normalizza marcatori di azione con punto: es. **Sperone.** -> **Sperone:** 
+  text = text.replace(/\*\*([^*]+?)\.\*\*(\s*)/g, '**$1:** ');
+  text = text.replace(/\*\*([^*]+?):\*\*([^\s\n])/g, '**$1:** $2');
+
+  // Separa parole incolonnate attaccate ai grassetti: es. "+5**Sensi:**" o "danni taglienti.**Giavellotto:**"
+  text = text.replace(/([^\n\s])\s*\*\*([A-Za-zÀ-ÖØ-öø-ÿ0-9\s]+?)([:.]?)\*\*/g, '$1\n\n**$2:** ');
+
   // 9. Pulizia punteggiatura generale
-  // Rimuove spazi prima della punteggiatura (es: "parola ," -> "parola,")
   text = text.replace(/\s+([,\.\:\;\!\?])/g, '$1');
 
   // Assicura spazio dopo virgole, punti e virgola, due punti se seguiti da lettere (evitando URL, numeri come 3.5, etc.)
   text = text.replace(/([,;])([a-zA-ZàèéìòùÀÈÉÌÒÙ])/g, '$1 $2');
   text = text.replace(/(:)(?!\/\/|\d)([a-zA-ZàèéìòùÀÈÉÌÒÙ])/g, '$1 $2');
   
-  // Assicura spazio dopo punto fermo, punto esclamativo e interrogativo se seguiti da lettere maiuscole
+  // Assicura spazio dopo punto fermo, punto esclamativo e interrogativo se seguiti da lettere
   text = text.replace(/([\.\!\?])([A-ZÀÈÉÌÒÙ])/g, '$1 $2');
+  
+  // CORREZIONE SPECIFICA: Separa azioni incollate al punto fermo di fine danno
+  text = text.replace(/([a-z])\.([A-Z][a-z]+)/g, '$1.\n$2');
+
+  text = text.replace(/([a-zà-öø-ÿ0-9\)])\.([A-ZÀ-ÖØ-öø-ÿ])/g, '$1. $2');
 
   // 10. Normalizzazione trattini di dialogo narrativo
   // Es: inizio riga con "- " o "— "

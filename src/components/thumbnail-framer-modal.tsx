@@ -164,7 +164,7 @@ export function ThumbnailFramerModal({
       const t2 = e.touches[1];
       const currentDist = Math.hypot(t1.clientX - t2.clientX, t1.clientY - t2.clientY);
       const ratio = currentDist / (touchStateRef.current.initialPinchDistance || 1);
-      const newZoom = Math.max(0.5, Math.min(3.8, touchStateRef.current.initialZoom * ratio));
+      const newZoom = Math.max(0.5, Math.min(15.0, touchStateRef.current.initialZoom * ratio));
       setZoom(Number(newZoom.toFixed(2)));
     } else if (e.touches.length === 1 && isDraggingRef.current && !touchStateRef.current.isPinching) {
       e.preventDefault();
@@ -198,7 +198,7 @@ export function ThumbnailFramerModal({
   const handleWheel = (e: React.WheelEvent) => {
     e.preventDefault();
     const delta = e.deltaY > 0 ? -0.1 : 0.1;
-    setZoom((prev) => Math.max(0.5, Math.min(3.8, Number((prev + delta).toFixed(2)))));
+    setZoom((prev) => Math.max(0.5, Math.min(15.0, Number((prev + delta).toFixed(2)))));
   };
 
   // Genera il canvas 1:1 per il rendering definitivo o anteprima
@@ -291,6 +291,14 @@ export function ThumbnailFramerModal({
     }
   };
 
+  const containerW = containerRef.current?.clientWidth || 240;
+  const containerH = containerRef.current?.clientHeight || 240;
+  const baseScale = (naturalDimensions.w && naturalDimensions.h)
+    ? Math.min(containerW / naturalDimensions.w, containerH / naturalDimensions.h)
+    : 1;
+  const renderedImgW = naturalDimensions.w ? naturalDimensions.w * baseScale : undefined;
+  const renderedImgH = naturalDimensions.h ? naturalDimensions.h * baseScale : undefined;
+
   return (
     <Dialog open={isOpen} onOpenChange={(open) => { if (!open) onClose(); }}>
       <DialogContent 
@@ -376,7 +384,13 @@ export function ThumbnailFramerModal({
                       <img 
                         src={activeImageSrc} 
                         alt="Thumbnail crop target" 
-                        className="max-h-[150px] sm:max-h-[340px] w-auto object-contain rounded border border-white/10 pointer-events-none select-none"
+                        style={{
+                          width: renderedImgW ? `${renderedImgW}px` : undefined,
+                          height: renderedImgH ? `${renderedImgH}px` : undefined,
+                          maxWidth: 'none',
+                          maxHeight: 'none',
+                        }}
+                        className="object-contain rounded border border-white/10 pointer-events-none select-none"
                         referrerPolicy="no-referrer"
                       />
                   </div>
@@ -443,7 +457,7 @@ export function ThumbnailFramerModal({
               <Slider
                 value={[zoom]}
                 min={0.5}
-                max={3.5}
+                max={15.0}
                 step={0.05}
                 onValueChange={(val) => setZoom(val[0])}
                 className="py-1 cursor-pointer"

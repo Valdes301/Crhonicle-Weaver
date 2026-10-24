@@ -44,13 +44,62 @@ const DetailItem = ({ label, value }: { label: string, value?: React.ReactNode }
 
 function parseAbilityScores(desc?: string) {
   if (!desc) return null;
+
+  // 1. Try parsing Markdown table format
+  // e.g. | FOR | DES | COS | INT | SAG | CAR |
+  //      |:---:|:---:|:---:|:---:|:---:|:---:|
+  //      | 10 (+0) | 14 (+2) | 10 (+0) | 11 (+0) | 12 (+1) | 11 (+0) |
+  const lines = desc.split('\n').map(l => l.trim());
+  for (let i = 0; i < lines.length - 1; i++) {
+    const line = lines[i];
+    if (line.includes('|') && (/FOR|STR/i.test(line)) && (/DES|DEX/i.test(line))) {
+      const headerCols = line.split('|').map(c => c.trim().toUpperCase()).filter(Boolean);
+      for (let j = i + 1; j < Math.min(i + 4, lines.length); j++) {
+        const dataLine = lines[j];
+        if (!dataLine.includes('|') || dataLine.includes('---')) continue;
+        const dataCols = dataLine.split('|').map(c => c.trim()).filter(Boolean);
+        if (dataCols.length >= 6) {
+          const res: Record<string, { score: string; mod: string }> = {};
+          headerCols.forEach((col, idx) => {
+            const rawVal = dataCols[idx] || '';
+            const valMatch = rawVal.match(/(\d+)\s*(?:\(([+-]?\d+)\))?/);
+            if (valMatch) {
+              const score = valMatch[1];
+              const scoreVal = parseInt(score, 10);
+              const calcMod = Math.floor((scoreVal - 10) / 2);
+              const mod = valMatch[2] || (calcMod >= 0 ? `+${calcMod}` : `${calcMod}`);
+              
+              if (/FOR|STR/i.test(col)) res.str = { score, mod };
+              else if (/DES|DEX/i.test(col)) res.dex = { score, mod };
+              else if (/COS|CON/i.test(col)) res.con = { score, mod };
+              else if (/INT/i.test(col)) res.int = { score, mod };
+              else if (/SAG|WIS/i.test(col)) res.wis = { score, mod };
+              else if (/CAR|CHA/i.test(col)) res.cha = { score, mod };
+            }
+          });
+          if (res.str && res.dex) {
+            return {
+              str: res.str || { score: '10', mod: '+0' },
+              dex: res.dex || { score: '10', mod: '+0' },
+              con: res.con || { score: '10', mod: '+0' },
+              int: res.int || { score: '10', mod: '+0' },
+              wis: res.wis || { score: '10', mod: '+0' },
+              cha: res.cha || { score: '10', mod: '+0' },
+            };
+          }
+        }
+      }
+    }
+  }
+
+  // 2. Fallback to inline regex
   const findScore = (names: string[]) => {
     for (const name of names) {
-      const regex = new RegExp(`${name}\\s*[:\\s]?\\s*(\\d+)\\s*\\(([+-]?\\d+)\\)`, 'i');
+      const regex = new RegExp(`${name}\\s*[:\\s|]?\\s*(\\d+)\\s*\\(([+-]?\\d+)\\)`, 'i');
       const match = desc.match(regex);
       if (match) return { score: match[1], mod: match[2] };
       
-      const regexSimple = new RegExp(`${name}\\s*[:\\s]?\\s*(\\d+)`, 'i');
+      const regexSimple = new RegExp(`${name}\\s*[:\\s|]?\\s*(\\d+)`, 'i');
       const matchSimple = desc.match(regexSimple);
       if (matchSimple) {
         const scoreVal = parseInt(matchSimple[1], 10);
@@ -81,6 +130,54 @@ function parseAbilityScores(desc?: string) {
   };
 }
 
+const cleanDescriptionForRendering = (desc?: string) => {
+  if (!desc) return '';
+  let out = desc;
+
+  // 1. Remove raw markdown ability score table from narrative text since AbilityScoresTable renders it cleanly at the top
+  out = out.replace(/###?\s*Caratteristiche\s*\n+(\|[^\n]+\|\s*\n*)+/gi, '');
+
+  // 2. Normalize and elevate section headers (Azioni, Reazioni, Tratti Speciali, Lore, etc.)
+  out = out.replace(/(?:^|\n)\s*(?:###?\s*)?\*{0,2}(Azioni(?:\s+Leggendarie)?|Reazioni|Tratti(?:\s+Speciali)?|Lore|Descrizione|Ecologia)\*{0,2}\s*(?:\n|$)/gi, '\n\n### $1\n\n');
+
+  // 3. Fix bold action names ending in a dot or colon without following space:
+  // e.g. **Sperone.**Attacco -> **Sperone:** Attacco
+  // e.g. **Sperone:**Attacco -> **Sperone:** Attacco
+  // e.g. **Sperone.** Attacco -> **Sperone:** Attacco
+  out = out.replace(/\*\*([^*]+?)\.\*\*(\s*)/g, '**$1:** ');
+  out = out.replace(/\*\*([^*]+?):\*\*([^\s\n])/g, '**$1:** $2');
+  out = out.replace(/\*\*([^*]+?)\*\*:\s*/g, '**$1:** ');
+
+  // 4. Separate stuck traits or sentences where words run directly into bold:
+  // e.g. "+5**Sensi:**" -> "+5\n\n**Sensi:** "
+  // e.g. "danni taglienti.**Giavellotto:**" -> "danni taglienti.\n\n**Giavellotto:** "
+  out = out.replace(/([^\n\s])\s*\*\*([A-Za-zÀ-ÖØ-öø-ÿ0-9\s]+?)([:.]?)\*\*/g, '$1\n\n**$2:** ');
+
+  // 5. Separate stuck text where trait names or attacks are glued to previous words:
+  // e.g. "AuranAttacco in Picchiata" -> "Auran\n\n**Attacco in Picchiata:** "
+  out = out.replace(/\b(Auran|Aquan|Ignan|Terran|Comune|Draconico|Elfico|Nanico|Gnomesco|Halfling|Orchesco|Infernale|Abissale|Celestiale|Sottocomune)(Attacco|Percezione|Sensi|Linguaggi|Armatura|Velocità|Sfida)\b/gi, '$1\n\n**$2:** ');
+  
+  // e.g. "...danni taglienti.Giavellotto." -> "...danni taglienti.\n\n**Giavellotto:** "
+  // Improved to handle common weapon names and action keywords
+  out = out.replace(/(\b(?:taglienti|perforanti|contundenti|necrotici|radiosi|fuoco|freddo|acido|fulmine|veleno|psichici|forza|taglienti)\.)\s*([A-ZÀ-ÖØ-öø-ÿ][a-zà-öø-ÿ]+[:.]?)/gi, '$1\n\n**$2** ');
+
+  // 6. Fix glued sentence ends before capitalized words:
+  // e.g. "bersaglio.Colpito" -> "bersaglio. Colpito"
+  out = out.replace(/([a-zà-öø-ÿ0-9\)])\.([A-ZÀ-ÖØ-öø-ÿ])/g, '$1. $2');
+
+  // 7. Ensure space after action colons (e.g. "Colpito:4" -> "Colpito: 4")
+  out = out.replace(/([a-zA-ZÀ-ÖØ-öø-ÿ]):([a-zA-Z0-9À-ÖØ-öø-ÿ\+])/g, '$1: $2');
+
+  // 8. Ensure double-asterisk format consistency: prevent double colons like "**Sperone::**"
+  out = out.replace(/:\s*:/g, ':');
+  out = out.replace(/\*\*\s*:\s*\*\*/g, ':**');
+
+  // 9. Clean up multiple empty lines
+  out = out.replace(/\n{3,}/g, '\n\n');
+
+  return out.trim();
+};
+
 const AbilityScoresTable = ({ desc }: { desc?: string }) => {
   const scores = parseAbilityScores(desc);
   if (!scores) return null;
@@ -93,14 +190,19 @@ const AbilityScoresTable = ({ desc }: { desc?: string }) => {
     { label: 'CAR', ...scores.cha },
   ];
   return (
-    <div className="grid grid-cols-6 gap-1.5 p-2.5 rounded-lg bg-amber-950/20 border border-amber-500/30 text-center font-mono text-xs shadow-sm">
-      {items.map((it, idx) => (
-        <div key={idx} className="flex flex-col p-1 rounded bg-background/60 border border-border/40">
-          <span className="text-[10px] font-bold text-amber-500 uppercase">{it.label}</span>
-          <span className="text-xs font-bold text-foreground mt-0.5">{it.score}</span>
-          <span className="text-[10px] text-muted-foreground">({it.mod})</span>
-        </div>
-      ))}
+    <div className="space-y-1.5 mb-2">
+      <div className="text-[10px] font-bold uppercase tracking-wider text-amber-500 font-sans">
+        Caratteristiche
+      </div>
+      <div className="grid grid-cols-3 sm:grid-cols-6 gap-2">
+        {items.map((it) => (
+          <div key={it.label} className="bg-amber-950/20 rounded-lg p-2 text-center border border-amber-500/30 shadow-sm flex flex-col items-center justify-center">
+            <span className="text-[10px] font-bold text-amber-500 block leading-tight">{it.label}</span>
+            <span className="text-sm font-bold text-foreground leading-tight my-0.5">{it.score}</span>
+            <span className="text-[10px] font-medium text-muted-foreground leading-tight">({it.mod})</span>
+          </div>
+        ))}
+      </div>
     </div>
   );
 };
@@ -186,26 +288,44 @@ export function MonsterFormDialog({ monster, campaignId, trigger, onSave }: { mo
         });
 
         if (result.success && result.data?.conflict) {
-            const confirmed = window.confirm("Un mostro con questo nome esiste già. Vuoi sovrascriverlo?");
-            if (!confirmed) return; // Annulla salvataggio
+            const confirmed = window.confirm(`Un mostro con il nome "${result.data.existingName}" esiste già. Vuoi sovrascriverlo?`);
+            if (!confirmed) return; 
 
-            // Se confermato, procedi con l'aggiornamento usando l'ID esistente
-            await actions.saveMonster({
+            // Se confermato, procedi con l'aggiornamento usando l'ID esistente e il flag overwrite
+            const updateRes = await actions.saveMonster({
+                ...values,
+                id: result.data.existingId,
+                overwrite: true,
+                type: sanitizeMonsterType(values.type),
+                description: cleanAiHallucinatoryLoops(values.description),
+                campaignId
+            });
+            
+            if (updateRes.success) {
+                onSave({
+                    ...values,
+                    id: result.data.existingId,
+                    type: sanitizeMonsterType(values.type),
+                    description: cleanAiHallucinatoryLoops(values.description),
+                    campaignId
+                });
+                setIsOpen(false);
+            }
+            return;
+        }
+        
+        if (result.success) {
+            onSave({
                 ...values,
                 id: result.data.id,
                 type: sanitizeMonsterType(values.type),
                 description: cleanAiHallucinatoryLoops(values.description),
                 campaignId
             });
+            setIsOpen(false);
+        } else {
+            toast({ variant: 'destructive', title: "Errore salvataggio", description: result.error });
         }
-        
-        onSave({
-            ...values,
-            type: sanitizeMonsterType(values.type),
-            description: cleanAiHallucinatoryLoops(values.description),
-            campaignId
-        });
-        setIsOpen(false);
     };
     
     return (
@@ -637,7 +757,7 @@ export function MonstersDb({ monsters, campaignId, possessedItems, onSave, onDel
                                 <h4 className="text-base font-bold text-amber-500 font-sans tracking-wide uppercase border-b border-amber-500/20 pb-1 mb-3">
                                     Statistiche & Tratti
                                 </h4>
-                                <MarkdownRenderer content={monster.description} className="text-sm leading-relaxed" />
+                                <MarkdownRenderer content={cleanDescriptionForRendering(monster.description)} className="text-sm leading-relaxed" />
                             </div>
                         </div>
                     </div>

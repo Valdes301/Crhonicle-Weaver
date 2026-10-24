@@ -65,7 +65,14 @@ OBIETTIVO: Analizza con assoluta fedeltà l'immagine e/o il testo ed estrai TUTT
      * 'armorClass': es. "12", "15 (armatura naturale)", "17 (armatura naturale)".
      * 'hitPoints': es. "13 (3d8)", "84 (13d10 + 13)", "157 (15d10 + 75)".
      * 'challenge': es. "1/4 (50 PE)", "4 (1.100 PE)", "8 (3.900 PE)".
-     * 'description': Includi la tabella caratteristiche Markdown (| FOR | DES | COS | INT | SAG | CAR |), tratti, azioni, reazioni, tana ed effetti regionali, capacità di gruppo e tutta la lore.
+     * 'description': Statblock completo e LORE INTEGRALE ESAUSTIVA.
+       - TABELLA CARATTERISTICHE: Includi sempre la tabella Markdown completa (| FOR | DES | COS | INT | SAG | CAR | con punteggio e modificatore).
+       - PARAMETRI: CA, PF, Velocità, Tiri Salvezza, Abilità, Vulnerabilità/Resistenze/Immunità, Sensi, Linguaggi, Grado Sfida.
+       - TRATTI & AZIONI: Tutti i tratti speciali, azioni, azioni leggendarie, reazioni.
+       - TRASCRIZIONE TOTALE DI OGNI PARAGRAFO DI LORE (FONDAMENTALE - NESSUNA OMISSIONE O RIASSUNTO):
+         Trascrivi INTEGRALMENTE PAROLA PER PAROLA ogni singolo paragrafo di ambientazione, ecologia, costumi, origini e leggende della creatura presente sulla pagina o tra le colonne.
+         Trascrivi TUTTI i sottoparagrafi e box di approfondimento con intestazione Markdown dedicata (es. '### Nemici del Male Elementale\n\n...', '### Sul Piano Materiale\n\n...', '### Alla Ricerca dei Sette Frammenti\n\n...', '### Evocare Elementali dell\'Aria\n\n...').
+         NON riassumere, non tagliare e non saltare MAI alcun paragrafo, anche se il testo è impaginato attorno o sotto l'illustrazione grafica, o prosegue su più pagine e colonne. Ogni singola frase descrittiva è essenziale per il Bestiario.
      * 'imageBox': Coordinate [ymin, xmin, ymax, xmax] normalizzate 0-1000 dell'illustrazione propria di quella creatura. Se la pagina non ha disegni, lascia null.
      * 'tokenBox': Coordinate [ymin, xmin, ymax, xmax] normalizzate 0-1000 focalizzate sulla testa/volto per la miniatura circolare.
 
@@ -438,6 +445,7 @@ async function extractUnifiedContent(input: CatalogRouterInput): Promise<Catalog
      * Compila 'pageAnalysis' ('pageLayout', 'detectedCreatures').
      * Estrai TUTTI i mostri presenti nell'array 'monsters' (esamina attentamente sia la colonna sinistra che destra, riquadri verticali, senza fermarti al primo mostro!).
      * Assegna a CIASCUN mostro il rispettivo 'imageBox' (coordinate 0-1000 dell'illustrazione propria di quella creatura) e 'tokenBox' (testa/volto).
+     * TRASCRIZIONE COMPLETA E INTEGRALE DELLA LORE: Non omettere MAI alcun paragrafo descrittivo, trafiletto, colonna di testo, leggenda o riquadro narrativo (es. 'Nemici del Male Elementale', 'Sul Piano Materiale', 'Alla Ricerca dei Sette Frammenti', ecologia, tana, azioni di gruppo). Trascrivi ogni singola parola nel campo 'description'.
    - SE CONTIENE OGGETTI O ARMI: estrai ciascuno nell'array 'items'.
    - SE CONTIENE INCANTESIMI: estrai ciascuno nell'array 'spells'.
    - SE CONTIENE ABILITÀ / PRIVILEGI DEI PG: estrai ciascuno nell'array 'skills'.
@@ -450,7 +458,7 @@ async function extractUnifiedContent(input: CatalogRouterInput): Promise<Catalog
         config: {
             systemInstruction: UNIFIED_SYSTEM_INSTRUCTION,
             temperature: 0.2,
-            maxOutputTokens: 4096,
+            maxOutputTokens: 32768,
         }
     });
 
@@ -545,6 +553,9 @@ async function extractUnifiedContent(input: CatalogRouterInput): Promise<Catalog
             hitPoints: hp,
             challenge: cr,
             description: cleanDesc,
+            imageUrl: photoDataUri || null,
+            thumbnailUrl: photoDataUri || null,
+            rawPageImage: photoDataUri || null,
             imageBox: imgBox,
             tokenBox: tokBox
         });

@@ -28,6 +28,7 @@ import { logAiError } from '@/lib/ai-logger';
 import type { Session, CampaignWithRelations, Campaign, MagicItem, Monster, PlayerCharacter, Spell, Skill, LetterPreset, Shop, WorldLocation, Npc, NpcDetails, Combat, CombatDetails, GenerateCombatInput, GenerateNpcInput, GenerateShopInput, GenerateLocationInput, Reward, GenerateTreasureInput, CharacterEvent, StoryArc, HomebrewRule, ApiStats, LoreEntry, LoreVersion, GranularQuestConfig, PcXpAward } from '@/lib/types';
 import { getLevelFromXp } from '@/lib/dnd5e-xp';
 import { randomUUID } from 'crypto';
+import { getBaseMonsters, getBaseItems, getBaseSpells, getBaseSkills } from '@/lib/compendium-data';
 import fs from 'fs';
 import path from 'path';
 
@@ -2237,18 +2238,84 @@ export async function deleteMagicItem(id: string) {
     } catch (e: any) { return actionResponse(null, e.message); }
 }
 
-export async function saveMonster(monster: Partial<Monster> & { campaignId: string; target?: 'system' | 'campaign' }) {
+export async function saveMonster(monster: Partial<Monster> & { campaignId: string; overwrite?: boolean; target?: 'system' | 'campaign' }) {
     try {
+        const { debugLog } = await import('./debug-logger');
+        debugLog("DEBUG: saveMonster called with:", monster);
         const id = monster.id || randomUUID();
         const now = new Date().toISOString();
         const rawName = monster.name || 'Creatura';
         const formattedName = formatTitleOrTag(rawName);
         const norm = formattedName.toLowerCase().trim();
 
-        // Se era stato nascosto tramite delete, rimuovilo dai cancellati
+        // 1. Unificazione e Migrazione Automatica:
+        try {
+            const systemMonsters = readSystemJsonFile<any>('custom-monsters.json', 'monsters');
+            if (systemMonsters && systemMonsters.length > 0) {
+                const cols = getTableCols('Monster');
+                for (const sm of systemMonsters) {
+                    const smFormatted = formatTitleOrTag(sm.name || '');
+                    if (!smFormatted) continue;
+                    const alreadyInDb = db.prepare("SELECT id FROM Monster WHERE LOWER(TRIM(name)) = LOWER(TRIM(?)) AND campaignId = ?").get(smFormatted, monster.campaignId);
+                    if (!alreadyInDb) {
+                        const newId = sm.id || randomUUID();
+                        const insertData: Record<string, any> = {
+                            id: newId,
+                            name: smFormatted,
+                            type: sanitizeMonsterType(sm.type),
+                            armorclass: sm.armorClass || '10',
+                            hitpoints: sm.hitPoints || '10',
+                            challenge: sm.challenge || '0',
+                            description: cleanAiHallucinatoryLoops(sm.description) || '',
+                            imageurl: sm.imageUrl || null,
+                            thumbnailurl: sm.thumbnailUrl || null,
+                            campaignid: monster.campaignId,
+                            createdat: sm.createdAt || now,
+                            updatedat: sm.updatedAt || now
+                        };
+                        const insertCols = Object.keys(insertData).filter(c => cols.includes(c.toLowerCase()));
+                        const placeholders = insertCols.map(() => '?').join(',');
+                        db.prepare(`INSERT INTO Monster (${insertCols.join(',')}) VALUES (${placeholders})`).run(...insertCols.map(c => insertData[c]));
+                    }
+                }
+            }
+        } catch (migErr) {
+            debugLog("[saveMonster] Sync custom-monsters error:", migErr);
+        }
+
         const deletedList = readSystemJsonFile<string>('deleted-monsters.json', 'deletedMonsters');
         if (deletedList.some(d => (d || '').toLowerCase().trim() === norm)) {
             writeSystemJsonFile('deleted-monsters.json', 'deletedMonsters', deletedList.filter(d => (d || '').toLowerCase().trim() !== norm));
+        }
+
+        const simplify = (str: string) => (str || '').toLowerCase().replace(/ck/g, 'k').replace(/[^a-z0-9]/g, '');
+        const targetSimple = simplify(formattedName);
+
+        let existingByName = db.prepare("SELECT * FROM Monster WHERE LOWER(TRIM(name)) = LOWER(TRIM(?)) AND campaignId = ?").get(formattedName, monster.campaignId) as any;
+        if (!existingByName) {
+            const allCampMonsters = db.prepare("SELECT id, name FROM Monster WHERE campaignId = ?").all(monster.campaignId) as any[];
+            existingByName = allCampMonsters.find(m => simplify(m.name) === targetSimple);
+        }
+        if (!existingByName) {
+            const baseList = getBaseMonsters();
+            const foundBase = baseList.find(m => simplify(m.name) === targetSimple);
+            if (foundBase) {
+                existingByName = { id: foundBase.id || randomUUID(), name: foundBase.name, isBase: true };
+            }
+        }
+
+        const existingById = monster.id && monster.id.length > 10 ? db.prepare("SELECT * FROM Monster WHERE id = ?").get(monster.id) as any : null;
+        debugLog("DEBUG: existingByName:", existingByName);
+        debugLog("DEBUG: existingById:", existingById);
+        const existing = existingByName || existingById;
+        debugLog("DEBUG: existing:", existing);
+
+        if (existing && !existing.isBase && !monster.overwrite && (!monster.id || existing.id !== monster.id)) {
+            return actionResponse({
+                conflict: true,
+                existingId: existing.id,
+                existingName: existing.name
+            });
         }
 
         let finalImageUrl = monster.imageUrl || null;
@@ -2261,15 +2328,7 @@ export async function saveMonster(monster: Partial<Monster> & { campaignId: stri
             finalThumbnailUrl = saveBase64ImageDirectly(finalThumbnailUrl, `${formattedName}-thumb`);
         }
 
-        const existing = monster.id
-            ? db.prepare("SELECT * FROM Monster WHERE id = ?").get(monster.id) as any
-            : db.prepare("SELECT * FROM Monster WHERE LOWER(TRIM(name)) = LOWER(TRIM(?)) AND campaignId = ?").get(formattedName, monster.campaignId) as any;
-
-        // Se esiste e non è un aggiornamento diretto (ID noto), avvisa del conflitto
-        const conflict = Boolean(existing && !monster.id);
         const targetId = existing?.id || id;
-
-        // Conserva le immagini esistenti se la nuova versione non ne fornisce una valida
         const finalResolvedImageUrl = finalImageUrl || existing?.imageUrl || existing?.imageurl || null;
         const finalResolvedThumbnailUrl = finalThumbnailUrl || existing?.thumbnailUrl || existing?.thumbnailurl || null;
 
@@ -2283,9 +2342,8 @@ export async function saveMonster(monster: Partial<Monster> & { campaignId: stri
         const cleanMonsterTypeStr = sanitizeMonsterType(monster.type) || existing?.type || 'Mostro';
         const cleanDescStr = cleanAiHallucinatoryLoops(monster.description) || '';
 
-        // Unione non distruttiva della descrizione/statistiche
         let mergedDescription = cleanDescStr;
-        if (existing && existing.description) {
+        if (!monster.overwrite && existing && existing.description) {
             if (!cleanDescStr) {
                 mergedDescription = existing.description;
             } else if (!cleanDescStr.includes(existing.description.slice(0, 60)) && !existing.description.includes(cleanDescStr.slice(0, 60))) {
@@ -2293,7 +2351,6 @@ export async function saveMonster(monster: Partial<Monster> & { campaignId: stri
             }
         }
 
-        // Conserva CA, PF e GS esistenti se la nuova scansione ha valori generici o vuoti
         const finalAc = (monster.armorClass && monster.armorClass !== '10' && monster.armorClass.trim() !== '')
             ? monster.armorClass
             : (existing?.armorclass || existing?.armorClass || monster.armorClass || '10');
@@ -2320,42 +2377,67 @@ export async function saveMonster(monster: Partial<Monster> & { campaignId: stri
             updatedat: now 
         };
 
-        if (existing) {
+        if (existing && !existing.isBase) {
             const updateCols = ['name', 'type', 'armorclass', 'hitpoints', 'challenge', 'description', 'imageurl', 'thumbnailurl', 'updatedat'].filter(c => monsterCols.includes(c));
             const setClause = updateCols.map(c => `${c} = ?`).join(', ');
             db.prepare(`UPDATE Monster SET ${setClause} WHERE id = ?`).run(...updateCols.map(c => d[c]), targetId);
         } else {
             const insertCols = Object.keys(d).filter(c => monsterCols.includes(c.toLowerCase()));
             const placeholders = insertCols.map(() => '?').join(',');
-            db.prepare(`INSERT INTO Monster (${insertCols.join(',')}) VALUES (${placeholders})`).run(...insertCols.map(c => d[c]));
+            db.prepare(`INSERT INTO Monster (${insertCols.join(',')}) VALUES (${placeholders}) ON CONFLICT(name, campaignId) DO UPDATE SET ${insertCols.filter(c => !['id', 'name', 'campaignid', 'createdat'].includes(c.toLowerCase())).map(c => `${c}=excluded.${c}`).join(', ')}`).run(...insertCols.map(c => d[c]));
         }
 
-        // Backup unificato automatico nel compendio di sistema per non perdere mai le creazioni
-        const systemMonsters = readSystemJsonFile<any>('custom-monsters.json', 'monsters');
-        const sysIdx = systemMonsters.findIndex((m: any) => (m.name || '').toLowerCase().trim() === norm);
-        const updatedEntry = {
-            id: targetId,
-            name: formattedName,
-            type: cleanMonsterTypeStr,
-            armorClass: finalAc,
-            hitPoints: finalHp,
-            challenge: finalCr,
-            description: mergedDescription,
-            imageUrl: finalResolvedImageUrl,
-            thumbnailUrl: finalResolvedThumbnailUrl,
-            updatedAt: now
-        };
-        if (sysIdx > -1) {
-            systemMonsters[sysIdx] = { ...systemMonsters[sysIdx], ...updatedEntry };
-        } else {
-            systemMonsters.push(updatedEntry);
-        }
-        writeSystemJsonFile('custom-monsters.json', 'monsters', systemMonsters);
+        try {
+            const systemMonsters = readSystemJsonFile<any>('custom-monsters.json', 'monsters');
+            const sysIdx = systemMonsters.findIndex((m: any) => (m.name || '').toLowerCase().trim() === norm);
+            const updatedEntry = {
+                id: targetId,
+                name: formattedName,
+                type: cleanMonsterTypeStr,
+                armorClass: finalAc,
+                hitPoints: finalHp,
+                challenge: finalCr,
+                description: mergedDescription,
+                imageUrl: finalResolvedImageUrl,
+                thumbnailUrl: finalResolvedThumbnailUrl,
+                updatedAt: now
+            };
+            if (sysIdx > -1) {
+                systemMonsters[sysIdx] = { ...systemMonsters[sysIdx], ...updatedEntry };
+            } else {
+                systemMonsters.push(updatedEntry);
+            }
+            writeSystemJsonFile('custom-monsters.json', 'monsters', systemMonsters);
+        } catch {}
 
-        return actionResponse({ id: targetId, imageUrl: finalResolvedImageUrl, thumbnailUrl: finalResolvedThumbnailUrl, conflict });
+        return actionResponse({ id: targetId, imageUrl: finalResolvedImageUrl, thumbnailUrl: finalResolvedThumbnailUrl, conflict: false });
     } catch (e: any) { 
         console.error("Errore saveMonster:", e);
         return actionResponse(null, e.message); 
+    }
+}
+
+export async function checkIfMonsterExists(name: string, campaignId: string) {
+    try {
+        console.log("DEBUG: checkIfMonsterExists called with:", name, campaignId);
+        const formattedName = formatTitleOrTag(name);
+        const norm = formattedName.toLowerCase().trim();
+        const simplify = (str: string) => (str || '').toLowerCase().replace(/ck/g, 'k').replace(/[^a-z0-9]/g, '');
+        const targetSimple = simplify(formattedName);
+
+        let existing = db.prepare("SELECT * FROM Monster WHERE LOWER(TRIM(name)) = LOWER(TRIM(?)) AND campaignId = ?").get(formattedName, campaignId) as any;
+        
+        if (!existing) {
+            const allCampMonsters = db.prepare("SELECT id, name FROM Monster WHERE campaignId = ?").all(campaignId) as any[];
+            existing = allCampMonsters.find(m => simplify(m.name) === targetSimple);
+        }
+        
+        if (existing) {
+            return actionResponse({ conflict: true, existingId: existing.id, existingName: existing.name });
+        }
+        return actionResponse({ conflict: false });
+    } catch (e: any) {
+        return actionResponse(null, e.message);
     }
 }
 
@@ -4780,6 +4862,109 @@ export async function saveCustomMonsterAction(data: {
         );
 
         return actionResponse({ success: true, id });
+    } catch (e: any) {
+        return actionResponse(null, e.message);
+    }
+}
+
+export async function consolidateAllDataToDbAction() {
+    'use server';
+    try {
+        const now = new Date().toISOString();
+        const campaignId = 'system';
+        const colsMonsters = getTableCols('Monster');
+        const colsItems = getTableCols('MagicItem');
+        const colsSpells = getTableCols('CustomSpell');
+        const colsSkills = getTableCols('CustomSkill');
+
+        db.transaction(() => {
+            // 1. Monsters
+            const baseMonsters = getBaseMonsters();
+            const insertMonster = db.prepare(`INSERT OR IGNORE INTO Monster (${colsMonsters.join(',')}) VALUES (${colsMonsters.map(() => '?').join(',')})`);
+            for (const m of baseMonsters) {
+                const data: Record<string, any> = {
+                    id: m.id || randomUUID(),
+                    name: formatTitleOrTag(m.name),
+                    type: sanitizeMonsterType(m.type),
+                    armorclass: m.armorClass || '10',
+                    hitpoints: m.hitPoints || '10',
+                    challenge: m.challenge || '0',
+                    description: cleanAiHallucinatoryLoops(m.description) || '',
+                    imageurl: m.imageUrl || null,
+                    thumbnailurl: m.thumbnailUrl || (m as any).thumbnailurl || m.imageUrl || null,
+                    campaignid: campaignId,
+                    createdat: now,
+                    updatedat: now
+                };
+                const values = colsMonsters.map(c => data[c.toLowerCase()] ?? null);
+                insertMonster.run(...values);
+            }
+
+            // 2. Magic Items & Equipment
+            const baseItems = getBaseItems();
+            const insertItem = db.prepare(`INSERT OR IGNORE INTO MagicItem (${colsItems.join(',')}) VALUES (${colsItems.map(() => '?').join(',')})`);
+            for (const i of baseItems) {
+                const data: Record<string, any> = {
+                    id: i.id || randomUUID(),
+                    name: formatTitleOrTag(i.name),
+                    type: i.type || 'Oggetto',
+                    rarity: i.rarity || 'Comune',
+                    attunement: i.attunement || 'No',
+                    description: i.description || '',
+                    cost: i.cost || 'N/D',
+                    damage: i.damage || '',
+                    techtype: i.techType || 'none',
+                    imageurl: i.imageUrl || null,
+                    campaignid: campaignId,
+                    createdat: now,
+                    updatedat: now
+                };
+                const values = colsItems.map(c => data[c.toLowerCase()] ?? null);
+                insertItem.run(...values);
+            }
+
+            // 3. Spells
+            const baseSpells = getBaseSpells();
+            const insertSpell = db.prepare(`INSERT OR IGNORE INTO CustomSpell (${colsSpells.join(',')}) VALUES (${colsSpells.map(() => '?').join(',')})`);
+            for (const s of baseSpells) {
+                const data: Record<string, any> = {
+                    id: s.id || randomUUID(),
+                    name: formatTitleOrTag(s.name),
+                    level: s.level || '0',
+                    school: s.school || 'Invocazione',
+                    casting_time: s.casting_time || '1 azione',
+                    range: s.range || 'Contatto',
+                    components: s.components || 'V, S',
+                    duration: s.duration || 'Istantanea',
+                    description: s.description || '',
+                    classes: s.classes || '',
+                    campaignid: campaignId,
+                    createdat: now,
+                    updatedat: now
+                };
+                const values = colsSpells.map(c => data[c.toLowerCase()] ?? null);
+                insertSpell.run(...values);
+            }
+
+            // 4. Skills
+            const baseSkills = getBaseSkills();
+            const insertSkill = db.prepare(`INSERT OR IGNORE INTO CustomSkill (${colsSkills.join(',')}) VALUES (${colsSkills.map(() => '?').join(',')})`);
+            for (const s of baseSkills) {
+                const data: Record<string, any> = {
+                    id: s.id || randomUUID(),
+                    name: formatTitleOrTag(s.name),
+                    ability: s.ability || 'FOR',
+                    description: s.description || '',
+                    campaignid: campaignId,
+                    createdat: now,
+                    updatedat: now
+                };
+                const values = colsSkills.map(c => data[c.toLowerCase()] ?? null);
+                insertSkill.run(...values);
+            }
+        })();
+
+        return actionResponse({ success: true, message: "Migrazione completata con successo!" });
     } catch (e: any) {
         return actionResponse(null, e.message);
     }

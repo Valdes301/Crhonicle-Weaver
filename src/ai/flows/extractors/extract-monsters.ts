@@ -44,7 +44,7 @@ export type MonsterExtractionOutput = {
 };
 
 const MONSTER_SYSTEM_INSTRUCTION = `Sei un archivista e trascrittore supremo del Manuale dei Mostri (D&D 5e e 2024) in lingua italiana.
-OBIETTIVO: Estrai TUTTE le schede complete di mostri, creature, PNG e varianti presenti nell'immagine o nel testo.
+OBIETTIVO: Estrai TUTTE le schede complete di mostri, creature, PNG e varianti presenti nell'immagine o nel testo, conservando INTEGRALMENTE e senza alcun troncamento tutti i paragrafi descrittivi, la storia, l'habitat, i box laterali, la lore (es. introduzioni, ecologia, relazioni, "Nemici del Male Elementale", ecc.) e ogni dettaglio presente sulla pagina.
 
 REGOLE FERREE ED ESTRAZIONE MOSTRI:
 1. IDENTIFICAZIONE CREATURA:
@@ -57,14 +57,23 @@ REGOLE FERREE ED ESTRAZIONE MOSTRI:
    - Estrai TUTTE le creature singolarmente. Se la pagina ha una colonna a sinistra e una a destra, cerca in entrambe.
    - Includi sempre box laterali, capacità di gruppo o varianti nella 'description'.
 
-3. STATISTICHE & LORE INTEGRATA:
+3. STATISTICHE & LORE INTEGRALE E SENZA OMISSIONI (MASSIMA PRIORITÀ):
    - Estrai con precisione: 'armorClass', 'hitPoints', 'challenge', 'type'.
-   - Nel campo 'description', INCLUDI LA TABELLA DELLE CARATTERISTICHE E IL BLOCCO DI STATISTICHE COMPLETO IN MARKDOWN FORMATTATO.
-   - Includi sempre tutta la narrazione o lore introdotta per la creatura.
-
-4. RITAGLIO IMMAGINE E MINIATURA:
-   - Valuta 'imageBox' (illustrazione intera) e 'tokenBox' (volto/testa) in coordinate 0-1000.
-   - NON tralasciare l'immagine se presente.
+   - Nel campo 'description', INCLUDI INTEGRALMENTE:
+     * La tabella delle caratteristiche in Markdown (| FOR | DES | COS | INT | SAG | CAR |)
+     * Il blocco di statistiche completo (CA, PF, Velocità, Abilità, Sensi, Linguaggi, Sfida)
+     * TUTTE le azioni, reazioni, tratti speciali, tana ed effetti regionali
+     * TRASCRIZIONE TOTALE DI OGNI SINGOLO PARAGRAFO DI LORE (NESSUNA OMISSIONE O SINTESI):
+       Trascrivi PAROLA PER PAROLA ogni singolo paragrafo di ambientazione, storia, origini, ecologia, cultura e comportamento.
+       Includi TUTTI i sottotitoli e riquadri narrativi con intestazione Markdown dedicata (es. '### Nemici del Male Elementale\n\n...', '### Sul Piano Materiale\n\n...', '### Alla Ricerca dei Sette Frammenti\n\n...', '### Evocare Elementali dell\'Aria\n\n...').
+       Anche se la spiegazione della creatura si estende su 2 o più pagine, o si trova incolonnata attorno o sotto le illustrazioni, DEVI estrarla e trascriverla INTEGRALMENTE senza mai riassumere o tagliare nulla.
+   - FORMATTAZIONE MARKDOWN RIGOROSA:
+     * GARANTISCI SEMPRE uno spazio dopo i due punti (:).
+     * GARANTISCI SEMPRE uno spazio dopo la fine di una sezione in grassetto (es. **Abilità:** ).
+     * Inserisci SEMPRE almeno una riga vuota tra sezioni diverse (es. tra abilità, azioni, e lore).
+     * Non attaccare mai testo a simboli di formattazione (es. usa **Titolo:** Testo).
+4. IMMAGINE E PAGINA INTERA:
+   - Associa l'intera pagina come immagine di riferimento principale.
 
 Rispondi ESCLUSIVAMENTE in JSON valido conforme allo schema.`;
 
@@ -291,7 +300,7 @@ export async function extractMonstersFromInput(input: MonsterExtractionInput): P
         config: {
             systemInstruction: MONSTER_SYSTEM_INSTRUCTION,
             temperature: 0.2,
-            maxOutputTokens: 8192,
+            maxOutputTokens: 32768,
         }
     });
 
@@ -355,6 +364,9 @@ export async function extractMonstersFromInput(input: MonsterExtractionInput): P
                 hitPoints: hp,
                 challenge: cr,
                 description: cleanDesc,
+                imageUrl: photoDataUri || null,
+                thumbnailUrl: photoDataUri || null,
+                rawPageImage: photoDataUri || null,
                 imageBox: imgBox,
                 tokenBox: tokBox
             };
