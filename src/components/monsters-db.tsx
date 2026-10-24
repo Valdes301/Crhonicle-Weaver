@@ -780,6 +780,7 @@ export function MonstersDb({ monsters, campaignId, possessedItems, onSave, onDel
       {lightboxImage && (
         <Dialog open={!!lightboxImage} onOpenChange={(open) => { if (!open) setLightboxImage(null); }}>
           <DialogContent className="max-w-3xl p-1 bg-black/90 border-none overflow-hidden flex items-center justify-center">
+            <DialogTitle className="sr-only">Anteprima miniatura ad alta risoluzione</DialogTitle>
             <div className="relative w-full max-h-[80vh] aspect-auto flex items-center justify-center">
               <img 
                 src={lightboxImage} 
