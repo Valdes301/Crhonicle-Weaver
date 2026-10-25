@@ -49,7 +49,7 @@ import { useToast } from '@/hooks/use-toast';
 import * as actions from '@/lib/actions';
 import { Separator } from '@/components/ui/separator';
 import { ExperimentalCardGenerator } from './experimental-card-generator';
-import { MagicItemFormDialog } from './items-db';
+import { MagicItemFormDialog } from './equipment-db';
 import { MonsterFormDialog } from './monsters-db';
 import { Form, FormControl, FormField, FormItem, FormLabel, FormMessage } from './ui/form';
 import { useForm } from 'react-hook-form';

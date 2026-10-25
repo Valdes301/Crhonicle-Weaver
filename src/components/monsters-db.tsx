@@ -437,7 +437,6 @@ export function MonstersDb({ monsters, campaignId, possessedItems, onSave, onDel
   const [lightboxImage, setLightboxImage] = useState<string | null>(null);
   const [isTypeFilterOpen, setIsTypeFilterOpen] = useState(false);
   const [isGsFilterOpen, setIsGsFilterOpen] = useState(false);
-  const [mountedTime] = useState(() => Date.now());
 
   // Estrai tipi e gradi di sfida unici dai mostri presenti
   const allTypes = useMemo(() => {
@@ -558,10 +557,7 @@ export function MonstersDb({ monsters, campaignId, possessedItems, onSave, onDel
           <div className="flex flex-wrap items-center gap-2">
             <DropdownMenu 
               open={isTypeFilterOpen} 
-              onOpenChange={(open) => {
-                if (open && Date.now() - mountedTime < 350) return;
-                setIsTypeFilterOpen(open);
-              }}
+              onOpenChange={setIsTypeFilterOpen}
             >
               <DropdownMenuTrigger asChild>
                 <Button 
@@ -569,12 +565,6 @@ export function MonstersDb({ monsters, campaignId, possessedItems, onSave, onDel
                   variant="outline" 
                   size="sm" 
                   className="text-[10px] uppercase font-bold"
-                  onClick={(e) => {
-                    if (Date.now() - mountedTime < 350) {
-                      e.preventDefault();
-                      e.stopPropagation();
-                    }
-                  }}
                 >
                   <Filter className="mr-2 h-3.5 w-3.5" /> Tipo
                   {selectedTypes.length > 0 && <Badge variant="secondary" className="ml-2 h-4 px-1">{selectedTypes.length}</Badge>}
@@ -599,10 +589,7 @@ export function MonstersDb({ monsters, campaignId, possessedItems, onSave, onDel
 
             <DropdownMenu 
               open={isGsFilterOpen} 
-              onOpenChange={(open) => {
-                if (open && Date.now() - mountedTime < 1000) return;
-                setIsGsFilterOpen(open);
-              }}
+              onOpenChange={setIsGsFilterOpen}
             >
               <DropdownMenuTrigger asChild>
                 <Button 
@@ -610,12 +597,6 @@ export function MonstersDb({ monsters, campaignId, possessedItems, onSave, onDel
                   variant="outline" 
                   size="sm" 
                   className="text-[10px] uppercase font-bold"
-                  onClick={(e) => {
-                    if (Date.now() - mountedTime < 1000) {
-                      e.preventDefault();
-                      e.stopPropagation();
-                    }
-                  }}
                 >
                   <Filter className="mr-2 h-3.5 w-3.5" /> Grado di Sfida (GS)
                   {selectedChallenges.length > 0 && <Badge variant="secondary" className="ml-2 h-4 px-1">{selectedChallenges.length}</Badge>}

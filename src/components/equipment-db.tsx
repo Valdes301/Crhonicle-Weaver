@@ -353,7 +353,6 @@ export function EquipmentDb({ armor, weapons, magicArmor, magicWeapons, allItems
                       variant="outline" 
                       size="sm" 
                       className="flex-shrink-0 text-[10px] uppercase font-bold"
-                      onClick={(e) => e.preventDefault()}
                     >
                         <ArrowUp className="mr-2 h-3.5 w-3.5" /> Ordina: {
                             sortBy === 'alphabetical' ? 'Nome' :
@@ -378,7 +377,6 @@ export function EquipmentDb({ armor, weapons, magicArmor, magicWeapons, allItems
                       variant="outline" 
                       size="sm" 
                       className="flex-shrink-0 text-[10px] uppercase font-bold"
-                      onClick={(e) => e.preventDefault()}
                     >
                         <Filter className="mr-2 h-3.5 w-3.5" /> Rarità 
                         {selectedRarities.length > 0 && <Badge variant="secondary" className="ml-2 h-4 px-1">{selectedRarities.length}</Badge>}
@@ -401,7 +399,6 @@ export function EquipmentDb({ armor, weapons, magicArmor, magicWeapons, allItems
                       variant="outline" 
                       size="sm" 
                       className="flex-shrink-0 text-[10px] uppercase font-bold"
-                      onClick={(e) => e.preventDefault()}
                     >
                         <Sparkles className="mr-2 h-3.5 w-3.5 text-amber-500" /> Origine: {
                             sourceFilter === 'all' ? 'Tutti' :

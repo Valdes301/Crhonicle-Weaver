@@ -232,10 +232,27 @@ export const SidebarNav = memo(function SidebarNav({ activeView, onViewChange, o
   }, [autoCloseEnabled, isMobile, open, openMobile, setOpen, setOpenMobile]);
 
   const [isTouchBlocking, setIsTouchBlocking] = useState<boolean>(false);
+  const [prevOpen, setPrevOpen] = useState(false);
+
+  // Trigger touch blocking whenever the sidebar starts closing (catches all methods of closure)
+  useEffect(() => {
+    const isCurrentlyOpen = open || openMobile;
+    if (prevOpen && !isCurrentlyOpen) {
+      setIsTouchBlocking(true);
+      const timer = setTimeout(() => setIsTouchBlocking(false), 1500);
+      return () => clearTimeout(timer);
+    }
+    setPrevOpen(isCurrentlyOpen);
+  }, [open, openMobile, prevOpen]);
+
+  const triggerBlock = () => {
+    setIsTouchBlocking(true);
+    setTimeout(() => setIsTouchBlocking(false), 1500);
+  };
 
   const handleViewChange = (view: string) => {
-    setIsTouchBlocking(true);
-    setTimeout(() => setIsTouchBlocking(false), 1200);
+    // Immediate block on intent to change view/close
+    triggerBlock();
 
     if (view === 'bacheca') {
       onViewChange(null);
@@ -338,152 +355,153 @@ export const SidebarNav = memo(function SidebarNav({ activeView, onViewChange, o
   const hasVisibleSupportItems = supportItems.some(i => isItemVisible(i.id));
   
   return (
-    <Sidebar collapsible="offcanvas" style={{ "--sidebar-width": "13rem" } as React.CSSProperties}>
-      <SidebarHeader>
-        <SidebarMenu>
-            <SidebarMenuItem>
-                <SidebarMenuButton 
-                    onClick={(e) => {
-                      e.stopPropagation();
-                      toggleSidebar();
-                    }}
-                    onTouchEnd={(e) => {
-                      e.stopPropagation();
-                      e.preventDefault();
-                      toggleSidebar();
-                    }}
-                    tooltip="Contrai/Espandi Navigazione"
-                    className="touch-manipulation cursor-pointer active:scale-95 transition-transform"
-                >
-                    <Icons.logo className="size-4 shrink-0 pointer-events-none" />
-                    <span className="truncate font-headline font-bold text-lg pointer-events-none">Tessitore</span>
-                </SidebarMenuButton>
-            </SidebarMenuItem>
-            {/* Tasto Modalità Giocatore rapido nella barra */}
-            <SidebarMenuItem>
-                <SidebarMenuButton
-                    onClick={(e) => {
-                      e.stopPropagation();
-                      handleTogglePlayerMode(e);
-                    }}
-                    onTouchEnd={(e) => {
-                      e.stopPropagation();
-                      e.preventDefault();
-                      handleTogglePlayerMode(e);
-                    }}
-                    tooltip={activePlayerMode ? "Vista Giocatore Attiva (Clicca per sbloccare DM)" : "Passa a Modalità Giocatore"}
-                    className={cn(
-                      "text-xs font-serif transition-all touch-manipulation cursor-pointer active:scale-95",
-                      activePlayerMode 
-                        ? "bg-emerald-950/40 text-emerald-300 hover:bg-emerald-950/60 border border-emerald-600/40" 
-                        : "hover:bg-stone-800 text-stone-300"
-                    )}
-                >
-                    {activePlayerMode ? <Users className="size-4 text-emerald-400 shrink-0 pointer-events-none" /> : <Shield className="size-4 text-amber-400 shrink-0 pointer-events-none" />}
-                    <span className="truncate flex-1 font-semibold pointer-events-none">{activePlayerMode ? "Vista Giocatori" : "Modalità DM"}</span>
-                    {activePlayerMode && <span className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse shrink-0 pointer-events-none" />}
-                </SidebarMenuButton>
-            </SidebarMenuItem>
-        </SidebarMenu>
-      </SidebarHeader>
-      <SidebarContent>
-        {hasVisibleNavItems && (
-          <SidebarGroup>
-              <SidebarGroupLabel>{activePlayerMode ? "Bacheca" : "Master"}</SidebarGroupLabel>
-              <SidebarMenu>
-                {navItems.map(renderMenuItem)}
-              </SidebarMenu>
-          </SidebarGroup>
+    <>
+      <Sidebar collapsible="offcanvas" style={{ "--sidebar-width": "13rem" } as React.CSSProperties}>
+        <SidebarHeader>
+          <SidebarMenu>
+              <SidebarMenuItem>
+                  <SidebarMenuButton 
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        toggleSidebar();
+                      }}
+                      onTouchEnd={(e) => {
+                        e.stopPropagation();
+                        e.preventDefault();
+                        toggleSidebar();
+                      }}
+                      tooltip="Contrai/Espandi Navigazione"
+                      className="touch-manipulation cursor-pointer active:scale-95 transition-transform"
+                  >
+                      <Icons.logo className="size-4 shrink-0 pointer-events-none" />
+                      <span className="truncate font-headline font-bold text-lg pointer-events-none">Tessitore</span>
+                  </SidebarMenuButton>
+              </SidebarMenuItem>
+              {/* Tasto Modalità Giocatore rapido nella barra */}
+              <SidebarMenuItem>
+                  <SidebarMenuButton
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        handleTogglePlayerMode(e);
+                      }}
+                      onTouchEnd={(e) => {
+                        e.stopPropagation();
+                        e.preventDefault();
+                        handleTogglePlayerMode(e);
+                      }}
+                      tooltip={activePlayerMode ? "Vista Giocatore Attiva (Clicca per sbloccare DM)" : "Passa a Modalità Giocatore"}
+                      className={cn(
+                        "text-xs font-serif transition-all touch-manipulation cursor-pointer active:scale-95",
+                        activePlayerMode 
+                          ? "bg-emerald-950/40 text-emerald-300 hover:bg-emerald-950/60 border border-emerald-600/40" 
+                          : "hover:bg-stone-800 text-stone-300"
+                      )}
+                  >
+                      {activePlayerMode ? <Users className="size-4 text-emerald-400 shrink-0 pointer-events-none" /> : <Shield className="size-4 text-amber-400 shrink-0 pointer-events-none" />}
+                      <span className="truncate flex-1 font-semibold pointer-events-none">{activePlayerMode ? "Vista Giocatori" : "Modalità DM"}</span>
+                      {activePlayerMode && <span className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse shrink-0 pointer-events-none" />}
+                  </SidebarMenuButton>
+              </SidebarMenuItem>
+          </SidebarMenu>
+        </SidebarHeader>
+        <SidebarContent>
+          {hasVisibleNavItems && (
+            <SidebarGroup>
+                <SidebarGroupLabel>{activePlayerMode ? "Bacheca" : "Master"}</SidebarGroupLabel>
+                <SidebarMenu>
+                  {navItems.map(renderMenuItem)}
+                </SidebarMenu>
+            </SidebarGroup>
+          )}
+
+          {hasVisibleCreativeItems && (
+            <SidebarGroup>
+                <SidebarGroupLabel>Strumenti Creativi</SidebarGroupLabel>
+                <SidebarMenu>
+                  {creativeItems.map(renderMenuItem)}
+                </SidebarMenu>
+            </SidebarGroup>
+          )}
+          
+          {hasVisibleHandbookItems && (
+            <SidebarGroup>
+                <SidebarGroupLabel>Manuale</SidebarGroupLabel>
+                <SidebarMenu>
+                  {handbookItems.map(renderMenuItem)}
+                </SidebarMenu>
+            </SidebarGroup>
+          )}
+
+          {hasVisibleSupportItems && (
+            <SidebarGroup>
+                <SidebarGroupLabel>Avanzate</SidebarGroupLabel>
+                <SidebarMenu>
+                  {supportItems.map(renderMenuItem)}
+                </SidebarMenu>
+            </SidebarGroup>
+          )}
+
+          {!activePlayerMode && (
+            <SidebarGroup>
+                <SidebarGroupLabel>Sistema</SidebarGroupLabel>
+                <SidebarMenu>
+                    <SidebarMenuItem>
+                        <SidebarMenuButton 
+                            onClick={() => {
+                              if (isPinConfigured()) {
+                                setPromptView('sistema');
+                              } else {
+                                handleViewChange('sistema');
+                              }
+                            }}
+                            isActive={activeView === 'sistema'} 
+                            tooltip={isClient && hasPin ? "Sistema (🔒 Protetto da PIN)" : "Pannello Sistema"}
+                            className="hover:text-amber-300 font-medium"
+                        >
+                          <Settings className="w-4 h-4 text-amber-400" />
+                          <span>Sistema</span>
+                          {isClient && hasPin && <Lock className="w-3.5 h-3.5 text-amber-500 ml-auto" />}
+                        </SidebarMenuButton>
+                    </SidebarMenuItem>
+                </SidebarMenu>
+            </SidebarGroup>
+          )}
+        </SidebarContent>
+        <SidebarFooter />
+
+        {/* Dialog per apertura scheda protetta da PIN */}
+        {promptView && (
+          <PinPromptDialog
+            open={Boolean(promptView)}
+            onOpenChange={(open) => !open && setPromptView(null)}
+            title="Sezione Protetta dal Dungeon Master"
+            description={`Inserisci il PIN per accedere alla scheda "${promptView === 'sistema' ? 'Sistema' : promptView}".`}
+            onSuccess={() => {
+              const target = promptView;
+              setPromptView(null);
+              handleViewChange(target);
+            }}
+          />
         )}
 
-        {hasVisibleCreativeItems && (
-          <SidebarGroup>
-              <SidebarGroupLabel>Strumenti Creativi</SidebarGroupLabel>
-              <SidebarMenu>
-                {creativeItems.map(renderMenuItem)}
-              </SidebarMenu>
-          </SidebarGroup>
-        )}
-        
-        {hasVisibleHandbookItems && (
-          <SidebarGroup>
-              <SidebarGroupLabel>Manuale</SidebarGroupLabel>
-              <SidebarMenu>
-                {handbookItems.map(renderMenuItem)}
-              </SidebarMenu>
-          </SidebarGroup>
-        )}
-
-        {hasVisibleSupportItems && (
-          <SidebarGroup>
-              <SidebarGroupLabel>Avanzate</SidebarGroupLabel>
-              <SidebarMenu>
-                {supportItems.map(renderMenuItem)}
-              </SidebarMenu>
-          </SidebarGroup>
-        )}
-
-        {!activePlayerMode && (
-          <SidebarGroup>
-              <SidebarGroupLabel>Sistema</SidebarGroupLabel>
-              <SidebarMenu>
-                  <SidebarMenuItem>
-                      <SidebarMenuButton 
-                          onClick={() => {
-                            if (isPinConfigured()) {
-                              setPromptView('sistema');
-                            } else {
-                              handleViewChange('sistema');
-                            }
-                          }}
-                          isActive={activeView === 'sistema'} 
-                          tooltip={isClient && hasPin ? "Sistema (🔒 Protetto da PIN)" : "Pannello Sistema"}
-                          className="hover:text-amber-300 font-medium"
-                      >
-                        <Settings className="w-4 h-4 text-amber-400" />
-                        <span>Sistema</span>
-                        {isClient && hasPin && <Lock className="w-3.5 h-3.5 text-amber-500 ml-auto" />}
-                      </SidebarMenuButton>
-                  </SidebarMenuItem>
-              </SidebarMenu>
-          </SidebarGroup>
-        )}
-      </SidebarContent>
-      <SidebarFooter />
-
-      {/* Dialog per apertura scheda protetta da PIN */}
-      {promptView && (
+        {/* Dialog per sblocco Modalità Master */}
         <PinPromptDialog
-          open={Boolean(promptView)}
-          onOpenChange={(open) => !open && setPromptView(null)}
-          title="Sezione Protetta dal Dungeon Master"
-          description={`Inserisci il PIN per accedere alla scheda "${promptView === 'sistema' ? 'Sistema' : promptView}".`}
+          open={isExitPlayerPromptOpen}
+          onOpenChange={setIsExitPlayerPromptOpen}
+          title="Torna alla Modalità Dungeon Master"
+          description="Inserisci il PIN del DM per disattivare la visuale giocatori."
           onSuccess={() => {
-            const target = promptView;
-            setPromptView(null);
-            handleViewChange(target);
+            setIsExitPlayerPromptOpen(false);
+            setPlayerMode(false);
+            setPlayerModeState(false);
+            toast({ title: "Modalità DM Ripristinata", description: "Accesso completo sbloccato." });
           }}
         />
-      )}
-
-      {/* Dialog per sblocco Modalità Master */}
-      <PinPromptDialog
-        open={isExitPlayerPromptOpen}
-        onOpenChange={setIsExitPlayerPromptOpen}
-        title="Torna alla Modalità Dungeon Master"
-        description="Inserisci il PIN del DM per disattivare la visuale giocatori."
-        onSuccess={() => {
-          setIsExitPlayerPromptOpen(false);
-          setPlayerMode(false);
-          setPlayerModeState(false);
-          toast({ title: "Modalità DM Ripristinata", description: "Accesso completo sbloccato." });
-        }}
-      />
-
-      {/* Sovrapposizione trasparente anti-ghost click per transizioni di vista */}
+      </Sidebar>
+      {/* Sovrapposizione trasparente anti-ghost click per transizioni di vista - ORA ESTERNA AL SIDEBAR */}
       {isTouchBlocking && (
         <div className="fixed inset-0 z-[99999] bg-transparent pointer-events-auto" />
       )}
-    </Sidebar>
+    </>
   );
 });
