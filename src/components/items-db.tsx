@@ -294,6 +294,7 @@ export function ItemsDb({ magicItems, campaignId, possessedItems, onSaveItem, on
   const [showPossessed, setShowPossessed] = useState(false);
   const [selectedRarities, setSelectedRarities] = useState<string[]>([]);
   const [sourceFilter, setSourceFilter] = useState<'all' | 'base' | 'created'>('all');
+  const [lightboxImage, setLightboxImage] = useState<string | null>(null);
 
   const handleRarityChange = (rarity: string) => {
     setSelectedRarities(prev => 
@@ -443,7 +444,19 @@ export function ItemsDb({ magicItems, campaignId, possessedItems, onSaveItem, on
             <AccordionItem value={item.name} key={item.name}>
               <AccordionPrimitive.Header className="flex items-center">
                 <AccordionPrimitive.Trigger className="flex flex-1 items-center justify-between py-4 font-medium text-left transition-all hover:underline [&[data-state=open]>svg]:rotate-180">
-                  <div className="flex items-center gap-2 flex-wrap">
+                  <div className="flex items-center gap-2.5 flex-wrap">
+                      {item.imageUrl && (
+                        <div 
+                          className="relative w-8 h-8 rounded-full overflow-hidden border border-amber-500/40 shrink-0 bg-muted cursor-pointer hover:ring-2 hover:ring-amber-500/50 transition-all"
+                          title="Ingrandisci miniatura"
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            setLightboxImage(item.imageUrl || null);
+                          }}
+                        >
+                          <Image src={item.imageUrl} alt={item.name} fill className="object-cover" />
+                        </div>
+                      )}
                       <span className="break-words pr-2">{item.name}</span>
                       {(item.source === 'created' || !!item.campaignId) ? (
                         <Badge variant="secondary" className="bg-amber-500/10 text-amber-400 border border-amber-500/30">
@@ -480,7 +493,11 @@ export function ItemsDb({ magicItems, campaignId, possessedItems, onSaveItem, on
               <AccordionContent>
                 <div className="flex flex-col sm:flex-row gap-6">
                     {item.imageUrl && (
-                        <div className="relative w-full sm:w-48 aspect-square rounded-lg overflow-hidden border bg-muted flex-shrink-0">
+                        <div 
+                          className="relative w-full sm:w-48 aspect-square rounded-lg overflow-hidden border bg-muted flex-shrink-0 cursor-pointer hover:opacity-90 transition-opacity"
+                          title="Clicca per ingrandire"
+                          onClick={() => setLightboxImage(item.imageUrl || null)}
+                        >
                             <Image src={item.imageUrl} alt={item.name} fill className="object-cover" />
                         </div>
                     )}
@@ -515,6 +532,24 @@ export function ItemsDb({ magicItems, campaignId, possessedItems, onSaveItem, on
             </AccordionItem>
           ))}
         </Accordion>
+
+        {lightboxImage && (
+          <Dialog open={!!lightboxImage} onOpenChange={(open) => { if (!open) setLightboxImage(null); }}>
+            <DialogContent className="sm:max-w-3xl p-2 bg-black/90 border-amber-500/30">
+              <DialogHeader className="sr-only">
+                <DialogTitle>Ingrandimento Immagine</DialogTitle>
+              </DialogHeader>
+              <div className="relative w-full h-[75vh] flex items-center justify-center">
+                <Image
+                  src={lightboxImage}
+                  alt="Anteprima Ingrandita"
+                  fill
+                  className="object-contain rounded-md"
+                />
+              </div>
+            </DialogContent>
+          </Dialog>
+        )}
       </CardContent>
     </Card>
   );

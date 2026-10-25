@@ -71,11 +71,11 @@ async function getCampaignsData(activeCampaignId?: string): Promise<{
                 sessions = [];
             }
 
-            const magicItems = db.prepare('SELECT * FROM MagicItem WHERE campaignId = ?').all(activeCampaignData.id) as MagicItem[];
-            const monsters = db.prepare('SELECT * FROM Monster WHERE campaignId = ?').all(activeCampaignData.id) as Monster[];
+            const magicItems = db.prepare("SELECT * FROM MagicItem WHERE campaignId = ? OR campaignId = 'system' OR campaignId IS NULL").all(activeCampaignData.id) as MagicItem[];
+            const monsters = db.prepare("SELECT * FROM Monster WHERE campaignId = ? OR campaignId = 'system' OR campaignId IS NULL").all(activeCampaignData.id) as Monster[];
             const playerCharacters = db.prepare('SELECT * FROM PlayerCharacter WHERE campaignId = ? ORDER BY name ASC').all(activeCampaignData.id) as PlayerCharacter[];
-            const customSpells = db.prepare('SELECT * FROM CustomSpell WHERE campaignId = ?').all(activeCampaignData.id) as Spell[];
-            const customSkills = db.prepare('SELECT * FROM CustomSkill WHERE campaignId = ?').all(activeCampaignData.id) as Skill[];
+            const customSpells = db.prepare("SELECT * FROM CustomSpell WHERE campaignId = ? OR campaignId = 'system' OR campaignId IS NULL").all(activeCampaignData.id) as Spell[];
+            const customSkills = db.prepare("SELECT * FROM CustomSkill WHERE campaignId = ? OR campaignId = 'system' OR campaignId IS NULL").all(activeCampaignData.id) as Skill[];
             const possessedItems = db.prepare('SELECT itemName FROM PossessedItems WHERE campaignId = ?').all(activeCampaignData.id) as { itemName: string }[];
             const shops = db.prepare('SELECT * FROM Shop WHERE campaignId = ? ORDER BY updatedAt DESC').all(activeCampaignData.id) as Shop[];
             const worldLocations = db.prepare('SELECT * FROM WorldLocation WHERE campaignId = ? ORDER BY updatedAt DESC').all(activeCampaignData.id) as WorldLocation[];

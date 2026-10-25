@@ -232,7 +232,12 @@ export const SidebarNav = memo(function SidebarNav({ activeView, onViewChange, o
     };
   }, [autoCloseEnabled, isMobile, open, openMobile, setOpen, setOpenMobile]);
 
+  const [isTouchBlocking, setIsTouchBlocking] = useState<boolean>(false);
+
   const handleViewChange = (view: string) => {
+    setIsTouchBlocking(true);
+    setTimeout(() => setIsTouchBlocking(false), 350);
+
     if (view === 'bacheca') {
       onViewChange(null);
     } else {
@@ -475,6 +480,11 @@ export const SidebarNav = memo(function SidebarNav({ activeView, onViewChange, o
           toast({ title: "Modalità DM Ripristinata", description: "Accesso completo sbloccato." });
         }}
       />
+
+      {/* Sovrapposizione trasparente anti-ghost click per transizioni di vista */}
+      {isTouchBlocking && (
+        <div className="fixed inset-0 z-[99999] bg-transparent pointer-events-auto" />
+      )}
     </Sidebar>
   );
 });

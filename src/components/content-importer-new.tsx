@@ -63,7 +63,9 @@ import {
   Clock,
   Activity,
   Terminal,
-  Timer
+  Timer,
+  ZoomIn,
+  ZoomOut
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { sanitizeMonsterType, sanitizeMonsterName, cleanAiHallucinatoryLoops } from '@/lib/formatter';
@@ -330,32 +332,37 @@ export function ContentImporterNew({ campaignId }: ContentImporterNewProps) {
   // Modali Ritaglio Immagine & Miniatura
   const [framerModal, setFramerModal] = useState<{
     isOpen: boolean;
-    monsterId: string;
+    targetId: string;
+    targetType: 'monster' | 'equipment' | 'item';
     imageSrc: string;
     name: string;
     availablePages?: string[];
   }>({
     isOpen: false,
-    monsterId: '',
+    targetId: '',
+    targetType: 'monster',
     imageSrc: '',
     name: '',
   });
 
   const [cropperModal, setCropperModal] = useState<{
     isOpen: boolean;
-    monsterId: string;
+    targetId: string;
+    targetType: 'monster' | 'equipment' | 'item';
     imageSrc: string;
     name: string;
     availablePages?: string[];
   }>({
     isOpen: false,
-    monsterId: '',
+    targetId: '',
+    targetType: 'monster',
     imageSrc: '',
     name: '',
   });
 
-  // Lightbox Immagine Ingrandita
+  // Lightbox Immagine Ingrandita con Zoom
   const [lightboxUrl, setLightboxUrl] = useState<string | null>(null);
+  const [lightboxZoom, setLightboxZoom] = useState<number>(1);
 
   // Stato Espansione Schede
   const [expandedCards, setExpandedCards] = useState<Record<string, boolean>>({});
@@ -3891,14 +3898,57 @@ export function ContentImporterNew({ campaignId }: ContentImporterNewProps) {
                               </div>
                               <p className="text-xs text-muted-foreground italic">{e.type}</p>
                             </div>
-                            {e.imageUrl && (
-                              <img
-                                src={e.imageUrl}
-                                alt={e.name}
-                                onClick={() => setLightboxUrl(e.imageUrl || null)}
-                                className="w-10 h-10 rounded-md object-cover border border-border cursor-pointer shadow-sm hover:scale-105 transition-transform shrink-0"
-                              />
-                            )}
+                            <div className="flex items-center gap-1.5 shrink-0">
+                              {e.thumbnailUrl ? (
+                                <img
+                                  src={e.thumbnailUrl}
+                                  alt=""
+                                  onClick={() => {
+                                    const pages = e.pageImages && e.pageImages.length > 0 ? e.pageImages : (e.rawPageImage ? [e.rawPageImage] : (e.imageUrl ? [e.imageUrl] : []));
+                                    setFramerModal({
+                                      isOpen: true,
+                                      targetId: e.id,
+                                      targetType: 'equipment',
+                                      imageSrc: (e.rawPageImage || (pages && pages[0]) || e.imageUrl)!,
+                                      name: e.name,
+                                      availablePages: pages
+                                    });
+                                  }}
+                                  className="w-9 h-9 rounded-full object-cover border-2 border-amber-500/80 cursor-pointer shadow-sm hover:scale-110 transition-transform"
+                                  title="Miniatura (clicca per inquadrare o modificare)"
+                                />
+                              ) : (
+                                (e.rawPageImage || e.imageUrl || (e.pageImages && e.pageImages.length > 0)) && (
+                                  <button
+                                    type="button"
+                                    onClick={() => {
+                                      const pages = e.pageImages && e.pageImages.length > 0 ? e.pageImages : (e.rawPageImage ? [e.rawPageImage] : (e.imageUrl ? [e.imageUrl] : []));
+                                      setFramerModal({
+                                        isOpen: true,
+                                        targetId: e.id,
+                                        targetType: 'equipment',
+                                        imageSrc: (e.rawPageImage || (pages && pages[0]) || e.imageUrl)!,
+                                        name: e.name,
+                                        availablePages: pages
+                                      });
+                                    }}
+                                    className="w-9 h-9 rounded-full border border-dashed border-amber-500/60 bg-amber-950/30 hover:bg-amber-950/60 flex items-center justify-center text-amber-300 transition-colors"
+                                    title="Nessuna miniatura: clicca per creare la miniatura"
+                                  >
+                                    <Sparkles className="h-4 w-4" />
+                                  </button>
+                                )
+                              )}
+                              {e.imageUrl && (
+                                <img
+                                  src={e.imageUrl}
+                                  alt={e.name}
+                                  onClick={() => { setLightboxUrl(e.imageUrl || null); setLightboxZoom(1); }}
+                                  className="w-10 h-10 rounded-md object-cover border border-border cursor-pointer shadow-sm hover:scale-105 transition-transform"
+                                  title="Illustrazione completa (clicca per ingrandire con zoom)"
+                                />
+                              )}
+                            </div>
                           </div>
 
                           <div className="grid grid-cols-3 gap-2 bg-muted/30 p-2 rounded-lg text-center border border-border/40 text-[11px]">
@@ -3930,15 +3980,67 @@ export function ContentImporterNew({ campaignId }: ContentImporterNewProps) {
                           </div>
                         </div>
 
-                        <CardFooter className="p-3 bg-muted/20 border-t border-border/50 flex items-center justify-end gap-2">
-                          <Button
-                            size="sm"
-                            onClick={() => handleSaveEquipment(e, 'campaign')}
-                            disabled={e.savedCampaign || e.isSaving}
-                            className={cn("h-7 text-xs font-bold", e.savedCampaign ? "bg-emerald-900/60 text-emerald-200" : "bg-primary text-primary-foreground")}
-                          >
-                            {e.savedCampaign ? 'In Armeria' : 'Salva Armeria'}
-                          </Button>
+                        <CardFooter className="p-3 bg-muted/20 border-t border-border/50 flex flex-wrap items-center justify-between gap-2">
+                          <div className="flex items-center gap-1.5 flex-wrap">
+                            {(e.rawPageImage || e.imageUrl || (e.pageImages && e.pageImages.length > 0)) && (
+                              <>
+                                <Button
+                                  size="sm"
+                                  variant="outline"
+                                  onClick={() => {
+                                    const pages = e.pageImages && e.pageImages.length > 0
+                                      ? e.pageImages
+                                      : (e.rawPageImage ? [e.rawPageImage] : (e.imageUrl ? [e.imageUrl] : []));
+                                    setCropperModal({
+                                      isOpen: true,
+                                      targetId: e.id,
+                                      targetType: 'equipment',
+                                      imageSrc: (e.rawPageImage || e.imageUrl || pages[0])!,
+                                      name: e.name,
+                                      availablePages: pages
+                                    });
+                                  }}
+                                  className="h-7 text-[11px] px-2 text-sky-300 border-sky-800/40 bg-sky-950/20 hover:bg-sky-950/50"
+                                  title="Ritaglio Immagine: ritaglia o regola l'immagine dell'arma/armatura"
+                                >
+                                  <Crop className="h-3 w-3 mr-1 text-sky-400" /> Ritaglio Immagine
+                                </Button>
+                                <Button
+                                  size="sm"
+                                  variant="outline"
+                                  onClick={() => {
+                                    const pages = e.pageImages && e.pageImages.length > 0
+                                      ? e.pageImages
+                                      : (e.rawPageImage ? [e.rawPageImage] : (e.imageUrl ? [e.imageUrl] : []));
+                                    setFramerModal({
+                                      isOpen: true,
+                                      targetId: e.id,
+                                      targetType: 'equipment',
+                                      imageSrc: (e.rawPageImage || (pages && pages[0]) || e.imageUrl)!,
+                                      name: e.name,
+                                      availablePages: pages
+                                    });
+                                  }}
+                                  className="h-7 text-[11px] px-2 text-amber-300 border-amber-800/40 bg-amber-950/20 hover:bg-amber-950/50"
+                                  title="Miniatura: centra e inquadra la miniatura circolare dell'arma/armatura"
+                                >
+                                  <Sparkles className="h-3 w-3 mr-1 text-amber-400" /> Miniatura
+                                </Button>
+                              </>
+                            )}
+                          </div>
+
+                          <div className="flex items-center gap-1.5 ml-auto">
+                            <Button
+                              size="sm"
+                              onClick={() => handleSaveEquipment(e, 'campaign')}
+                              disabled={e.savedCampaign || e.isSaving}
+                              className={cn("h-7 text-xs font-bold", e.savedCampaign ? "bg-emerald-900/60 text-emerald-200" : "bg-primary text-primary-foreground")}
+                            >
+                              {e.isSaving ? <Loader2 className="h-3 w-3 animate-spin" /> : e.savedCampaign ? <Check className="h-3 w-3 mr-1" /> : <Save className="h-3 w-3 mr-1" />}
+                              {e.savedCampaign ? 'In Armeria' : 'Salva Armeria'}
+                            </Button>
+                          </div>
                         </CardFooter>
                       </Card>
                     );
@@ -3994,14 +4096,57 @@ export function ContentImporterNew({ campaignId }: ContentImporterNewProps) {
                               </div>
                               <p className="text-xs text-muted-foreground italic">{item.type} ({item.rarity})</p>
                             </div>
-                            {item.imageUrl && (
-                              <img
-                                src={item.imageUrl}
-                                alt={item.name}
-                                onClick={() => setLightboxUrl(item.imageUrl || null)}
-                                className="w-10 h-10 rounded-md object-cover border border-border cursor-pointer shadow-sm hover:scale-105 transition-transform shrink-0"
-                              />
-                            )}
+                            <div className="flex items-center gap-1.5 shrink-0">
+                              {item.thumbnailUrl ? (
+                                <img
+                                  src={item.thumbnailUrl}
+                                  alt=""
+                                  onClick={() => {
+                                    const pages = item.pageImages && item.pageImages.length > 0 ? item.pageImages : (item.rawPageImage ? [item.rawPageImage] : (item.imageUrl ? [item.imageUrl] : []));
+                                    setFramerModal({
+                                      isOpen: true,
+                                      targetId: item.id,
+                                      targetType: 'item',
+                                      imageSrc: (item.rawPageImage || (pages && pages[0]) || item.imageUrl)!,
+                                      name: item.name,
+                                      availablePages: pages
+                                    });
+                                  }}
+                                  className="w-9 h-9 rounded-full object-cover border-2 border-amber-500/80 cursor-pointer shadow-sm hover:scale-110 transition-transform"
+                                  title="Miniatura (clicca per inquadrare o modificare)"
+                                />
+                              ) : (
+                                (item.rawPageImage || item.imageUrl || (item.pageImages && item.pageImages.length > 0)) && (
+                                  <button
+                                    type="button"
+                                    onClick={() => {
+                                      const pages = item.pageImages && item.pageImages.length > 0 ? item.pageImages : (item.rawPageImage ? [item.rawPageImage] : (item.imageUrl ? [item.imageUrl] : []));
+                                      setFramerModal({
+                                        isOpen: true,
+                                        targetId: item.id,
+                                        targetType: 'item',
+                                        imageSrc: (item.rawPageImage || (pages && pages[0]) || item.imageUrl)!,
+                                        name: item.name,
+                                        availablePages: pages
+                                      });
+                                    }}
+                                    className="w-9 h-9 rounded-full border border-dashed border-amber-500/60 bg-amber-950/30 hover:bg-amber-950/60 flex items-center justify-center text-amber-300 transition-colors"
+                                    title="Nessuna miniatura: clicca per creare la miniatura"
+                                  >
+                                    <Sparkles className="h-4 w-4" />
+                                  </button>
+                                )
+                              )}
+                              {item.imageUrl && (
+                                <img
+                                  src={item.imageUrl}
+                                  alt={item.name}
+                                  onClick={() => { setLightboxUrl(item.imageUrl || null); setLightboxZoom(1); }}
+                                  className="w-10 h-10 rounded-md object-cover border border-amber-500/40 cursor-pointer shadow-md hover:scale-105 transition-transform shrink-0"
+                                  title="Clicca per visualizzare l'immagine completa a schermo intero con zoom"
+                                />
+                              )}
+                            </div>
                           </div>
 
                           <div className="grid grid-cols-2 gap-2 bg-muted/30 p-2 rounded-lg text-center border border-border/40 text-[11px]">
@@ -4029,15 +4174,67 @@ export function ContentImporterNew({ campaignId }: ContentImporterNewProps) {
                           </div>
                         </div>
 
-                        <CardFooter className="p-3 bg-muted/20 border-t border-border/50 flex items-center justify-end gap-2">
-                          <Button
-                            size="sm"
-                            onClick={() => handleSaveMagicItem(item, 'campaign')}
-                            disabled={item.savedCampaign || item.isSaving}
-                            className={cn("h-7 text-xs font-bold", item.savedCampaign ? "bg-emerald-900/60 text-emerald-200" : "bg-primary text-primary-foreground")}
-                          >
-                            {item.savedCampaign ? 'Negli Oggetti' : 'Salva Oggetto'}
-                          </Button>
+                        <CardFooter className="p-3 bg-muted/20 border-t border-border/50 flex flex-wrap items-center justify-between gap-2">
+                          <div className="flex items-center gap-1.5 flex-wrap">
+                            {(item.rawPageImage || item.imageUrl || (item.pageImages && item.pageImages.length > 0)) && (
+                              <>
+                                <Button
+                                  size="sm"
+                                  variant="outline"
+                                  onClick={() => {
+                                    const pages = item.pageImages && item.pageImages.length > 0
+                                      ? item.pageImages
+                                      : (item.rawPageImage ? [item.rawPageImage] : (item.imageUrl ? [item.imageUrl] : []));
+                                    setCropperModal({
+                                      isOpen: true,
+                                      targetId: item.id,
+                                      targetType: 'item',
+                                      imageSrc: (item.rawPageImage || item.imageUrl || pages[0])!,
+                                      name: item.name,
+                                      availablePages: pages
+                                    });
+                                  }}
+                                  className="h-7 text-[11px] px-2 text-sky-300 border-sky-800/40 bg-sky-950/20 hover:bg-sky-950/50"
+                                  title="Ritaglio Immagine: ritaglia o regola l'immagine dell'oggetto"
+                                >
+                                  <Crop className="h-3 w-3 mr-1 text-sky-400" /> Ritaglio Immagine
+                                </Button>
+                                <Button
+                                  size="sm"
+                                  variant="outline"
+                                  onClick={() => {
+                                    const pages = item.pageImages && item.pageImages.length > 0
+                                      ? item.pageImages
+                                      : (item.rawPageImage ? [item.rawPageImage] : (item.imageUrl ? [item.imageUrl] : []));
+                                    setFramerModal({
+                                      isOpen: true,
+                                      targetId: item.id,
+                                      targetType: 'item',
+                                      imageSrc: (item.rawPageImage || (pages && pages[0]) || item.imageUrl)!,
+                                      name: item.name,
+                                      availablePages: pages
+                                    });
+                                  }}
+                                  className="h-7 text-[11px] px-2 text-amber-300 border-amber-800/40 bg-amber-950/20 hover:bg-amber-950/50"
+                                  title="Miniatura: centra e inquadra la miniatura circolare dell'oggetto"
+                                >
+                                  <Sparkles className="h-3 w-3 mr-1 text-amber-400" /> Miniatura
+                                </Button>
+                              </>
+                            )}
+                          </div>
+
+                          <div className="flex items-center gap-1.5 ml-auto">
+                            <Button
+                              size="sm"
+                              onClick={() => handleSaveMagicItem(item, 'campaign')}
+                              disabled={item.savedCampaign || item.isSaving}
+                              className={cn("h-7 text-xs font-bold", item.savedCampaign ? "bg-emerald-900/60 text-emerald-200" : "bg-primary text-primary-foreground")}
+                            >
+                              {item.isSaving ? <Loader2 className="h-3 w-3 animate-spin" /> : item.savedCampaign ? <Check className="h-3 w-3 mr-1" /> : <Save className="h-3 w-3 mr-1" />}
+                              {item.savedCampaign ? 'Negli Oggetti' : 'Salva Oggetto'}
+                            </Button>
+                          </div>
                         </CardFooter>
                       </Card>
                     );
@@ -4654,16 +4851,50 @@ export function ContentImporterNew({ campaignId }: ContentImporterNewProps) {
         </Dialog>
       )}
 
-      {/* Lightbox Ingrandimento Immagini */}
+      {/* Lightbox Ingrandimento Immagini con Zoom */}
       {lightboxUrl && (
-        <Dialog open={!!lightboxUrl} onOpenChange={() => setLightboxUrl(null)}>
-          <DialogContent className="max-w-3xl bg-background border-border p-4">
-            <DialogHeader>
+        <Dialog open={!!lightboxUrl} onOpenChange={() => { setLightboxUrl(null); setLightboxZoom(1); }}>
+          <DialogContent className="max-w-4xl bg-background border-border p-4 flex flex-col items-center">
+            <DialogHeader className="w-full flex flex-row items-center justify-between pb-2 border-b border-border">
               <DialogTitle className="text-sm font-bold text-foreground">Anteprima Illustrazione HD</DialogTitle>
               <DialogDescription className="sr-only">Visualizzazione ingrandita dell&apos;illustrazione</DialogDescription>
+              <div className="flex items-center gap-2 pr-6">
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={() => setLightboxZoom(prev => Math.max(0.5, prev - 0.25))}
+                  className="h-8 w-8 p-0"
+                  title="Riduci Zoom"
+                >
+                  <ZoomOut className="h-4 w-4" />
+                </Button>
+                <span className="text-xs font-mono w-12 text-center">{Math.round(lightboxZoom * 100)}%</span>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={() => setLightboxZoom(prev => Math.min(3, prev + 0.25))}
+                  className="h-8 w-8 p-0"
+                  title="Ingrandisci Zoom"
+                >
+                  <ZoomIn className="h-4 w-4" />
+                </Button>
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  onClick={() => setLightboxZoom(1)}
+                  className="h-8 text-xs px-2"
+                >
+                  Reset
+                </Button>
+              </div>
             </DialogHeader>
-            <div className="flex items-center justify-center p-2">
-              <img src={lightboxUrl} alt="" className="max-h-[80vh] w-auto rounded-lg object-contain shadow-md" />
+            <div className="flex items-center justify-center p-2 w-full overflow-auto max-h-[80vh]">
+              <img
+                src={lightboxUrl}
+                alt=""
+                style={{ transform: `scale(${lightboxZoom})`, transformOrigin: 'center center', transition: 'transform 0.15s ease-out' }}
+                className="max-h-[75vh] w-auto rounded-lg object-contain shadow-md"
+              />
             </div>
           </DialogContent>
         </Dialog>
@@ -4888,7 +5119,13 @@ export function ContentImporterNew({ campaignId }: ContentImporterNewProps) {
           availablePages={framerModal.availablePages}
           title={`Miniatura: ${framerModal.name}`}
           onSaveThumbnail={(tokenDataUrl) => {
-            setMonsters(prev => prev.map(m => m.id === framerModal.monsterId ? { ...m, thumbnailUrl: tokenDataUrl } : m));
+            if (framerModal.targetType === 'equipment') {
+              setEquipment(prev => prev.map(eq => eq.id === framerModal.targetId ? { ...eq, thumbnailUrl: tokenDataUrl } : eq));
+            } else if (framerModal.targetType === 'item') {
+              setMagicItems(prev => prev.map(it => it.id === framerModal.targetId ? { ...it, thumbnailUrl: tokenDataUrl } : it));
+            } else {
+              setMonsters(prev => prev.map(m => m.id === framerModal.targetId ? { ...m, thumbnailUrl: tokenDataUrl } : m));
+            }
             setFramerModal(prev => ({ ...prev, isOpen: false }));
             toast({ title: "Miniatura Aggiornata!" });
           }}
@@ -4904,7 +5141,13 @@ export function ContentImporterNew({ campaignId }: ContentImporterNewProps) {
           availablePages={cropperModal.availablePages}
           title={`Ritaglio Immagine: ${cropperModal.name}`}
           onCropSave={(croppedDataUrl) => {
-            setMonsters(prev => prev.map(m => m.id === cropperModal.monsterId ? { ...m, imageUrl: croppedDataUrl } : m));
+            if (cropperModal.targetType === 'equipment') {
+              setEquipment(prev => prev.map(eq => eq.id === cropperModal.targetId ? { ...eq, imageUrl: croppedDataUrl } : eq));
+            } else if (cropperModal.targetType === 'item') {
+              setMagicItems(prev => prev.map(it => it.id === cropperModal.targetId ? { ...it, imageUrl: croppedDataUrl } : it));
+            } else {
+              setMonsters(prev => prev.map(m => m.id === cropperModal.targetId ? { ...m, imageUrl: croppedDataUrl } : m));
+            }
             setCropperModal(prev => ({ ...prev, isOpen: false }));
             toast({ title: "Ritaglio Immagine Salvato!" });
           }}

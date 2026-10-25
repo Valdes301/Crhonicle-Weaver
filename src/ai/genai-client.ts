@@ -154,13 +154,15 @@ export async function safeGenerateContent(
 
   const activeModel = getActiveFlashModel(serviceName);
   
-  // Whitelist modelli consentiti e mappatura
-  const allowedModels = ['gemini-3.8-flash', 'gemini-3.5-flash', 'gemini-3.1-flash', 'gemini-3.1-flash-lite', 'gemini-3.1-flash-lite-preview', 'gemini-2.5-flash'];
+  // Whitelist modelli ufficiali per la SDK
+  const allowedModels = ['gemini-2.5-flash', 'gemini-2.5-pro'];
   const rawRequested = sanitizeModelName(params.model || activeModel);
-  const requestedModel = rawRequested === 'gemini-flash-latest' ? 'gemini-3.5-flash' : rawRequested;
+  const requestedModel = (rawRequested.includes('3.8') || rawRequested.includes('3.5') || rawRequested.includes('latest'))
+    ? 'gemini-2.5-flash'
+    : rawRequested;
   const primaryModel = allowedModels.includes(requestedModel) 
     ? requestedModel 
-    : 'gemini-3.8-flash';
+    : 'gemini-2.5-flash';
   
   const modelsToTry = [primaryModel, ...allowedModels.filter(m => m !== primaryModel)];
   const apiKeys = getAllValidGeminiApiKeys();

@@ -1,10 +1,11 @@
 'use client';
 
 import { useState, useMemo, useEffect, useId } from 'react';
+import Image from 'next/image';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
-import { ShieldCheck, Swords, PlusCircle, Plus, Trash2, Pencil, ChevronDown, CheckCircle, Filter, ArrowUp, X, Sword, Shield, Heart, Beaker, Zap, Trophy, Sparkles } from 'lucide-react';
+import { ShieldCheck, Swords, PlusCircle, Plus, Trash2, Pencil, ChevronDown, CheckCircle, Filter, ArrowUp, X, Sword, Shield, Heart, Beaker, Zap, Trophy, Sparkles, ImagePlus, Loader2 } from 'lucide-react';
 import type { Weapon, Armor, MagicItem, TechType } from '@/lib/types';
 import { Accordion, AccordionContent, AccordionItem } from '@/components/ui/accordion';
 import * as AccordionPrimitive from "@radix-ui/react-accordion";
@@ -24,6 +25,8 @@ import { DropdownMenu, DropdownMenuCheckboxItem, DropdownMenuContent, DropdownMe
 import { Label } from './ui/label';
 import { Switch } from './ui/switch';
 import { MarkdownRenderer } from './ui/markdown-renderer';
+import { useToast } from '@/hooks/use-toast';
+import * as actions from '@/lib/actions';
 
 const DetailItem = ({ label, value }: { label: string, value?: React.ReactNode }) => {
     if (!value || value === '—' || value === '') return null;
@@ -40,6 +43,7 @@ const magicItemSchema = z.object({
   cost: z.string().optional(),
   damage: z.string().optional().nullable(),
   techType: z.enum(['damage', 'defense', 'cure', 'alchemy', 'charges', 'reward', 'none']).optional(),
+  imageUrl: z.string().optional().nullable(),
 });
 
 type MagicItemFormData = z.infer<typeof magicItemSchema>;
@@ -76,7 +80,9 @@ const TechTypeSelector = ({ value, onChange }: { value?: TechType, onChange: (va
 
 function MagicItemFormDialog({ item, campaignId, trigger, onSave }: { item?: Partial<MagicItem>, campaignId: string, trigger: React.ReactNode, onSave: (data: MagicItemFormData & { campaignId: string }) => void }) {
     const [isOpen, setIsOpen] = useState(false);
+    const [isUploading, setIsUploading] = useState(false);
     const formId = useId();
+    const { toast } = useToast();
 
     const form = useForm<MagicItemFormData>({
         resolver: zodResolver(magicItemSchema),
@@ -90,6 +96,7 @@ function MagicItemFormDialog({ item, campaignId, trigger, onSave }: { item?: Par
             cost: item?.cost ?? '',
             damage: item?.damage ?? '',
             techType: item?.techType ?? 'damage',
+            imageUrl: item?.imageUrl ?? '',
         },
     });
 
@@ -105,9 +112,30 @@ function MagicItemFormDialog({ item, campaignId, trigger, onSave }: { item?: Par
                 cost: item?.cost ?? '',
                 damage: item?.damage ?? '',
                 techType: item?.techType ?? 'damage',
+                imageUrl: item?.imageUrl ?? '',
             });
         }
     }, [isOpen, item, form]);
+
+    const handleFileChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
+        const file = e.target.files?.[0];
+        if (!file) return;
+
+        setIsUploading(true);
+        const reader = new FileReader();
+        reader.onload = async (event) => {
+            const currentName = form.getValues('name');
+            const result = await actions.uploadGenericImage(event.target?.result as string, currentName);
+            if (result.success && result.data) {
+                form.setValue('imageUrl', result.data.url);
+                toast({ title: "Immagine caricata!" });
+            } else {
+                toast({ variant: 'destructive', title: "Errore caricamento", description: result.error });
+            }
+            setIsUploading(false);
+        };
+        reader.readAsDataURL(file);
+    };
 
     const handleSubmit = async (values: MagicItemFormData) => {
         await onSave({ ...values, attunement: values.attunement ?? 'No', campaignId });
@@ -117,18 +145,38 @@ function MagicItemFormDialog({ item, campaignId, trigger, onSave }: { item?: Par
     return (
         <Dialog open={isOpen} onOpenChange={setIsOpen}>
             <DialogTrigger asChild>{trigger}</DialogTrigger>
-            <DialogContent className="grid grid-rows-[auto_1fr_auto] max-h-[90vh] p-0">
+            <DialogContent className="grid grid-rows-[auto_1fr_auto] max-h-[90vh] p-0 sm:max-w-xl">
                 <DialogHeader className="p-6 pb-4">
-                    <DialogTitle>{item?.id ? 'Modifica Oggetto' : 'Nuovo Oggetto'}</DialogTitle>
-                    <DialogDescription>Inserisci i dettagli del tuo oggetto personalizzato.</DialogDescription>
+                    <DialogTitle>{item?.id ? 'Modifica Oggetto / Arma / Armatura' : 'Nuovo Oggetto / Arma / Armatura'}</DialogTitle>
+                    <DialogDescription>Inserisci i dettagli e la miniatura del tuo oggetto personalizzato.</DialogDescription>
                 </DialogHeader>
                 <ScrollArea className="px-6 border-y">
                     <Form {...form}>
                         <form id={formId} onSubmit={form.handleSubmit(handleSubmit)} className="space-y-4 py-4">
-                            <FormField control={form.control} name="name" render={({ field }) => (<FormItem><FormLabel>Nome</FormLabel><FormControl><Input {...field} /></FormControl><FormMessage /></FormItem>)} />
-                            <FormField control={form.control} name="type" render={({ field }) => (<FormItem><FormLabel>Tipo</FormLabel><FormControl><Input placeholder="es. Arma (spada lunga), Armatura (piastre)..." {...field} /></FormControl><FormMessage /></FormItem>)} />
-                            <FormField control={form.control} name="rarity" render={({ field }) => (<FormItem><FormLabel>Rarità</FormLabel><FormControl><Input placeholder="es. Comune, Non comune, Rara..." {...field} /></FormControl><FormMessage /></FormItem>)} />
-                            <FormField control={form.control} name="cost" render={({ field }) => (<FormItem><FormLabel>Costo</FormLabel><FormControl><Input placeholder="es. 500 mo" {...field} value={field.value ?? ''} /></FormControl><FormMessage /></FormItem>)} />
+                            <div className="flex flex-col sm:flex-row gap-4">
+                                <div className="flex-1 space-y-4">
+                                    <FormField control={form.control} name="name" render={({ field }) => (<FormItem><FormLabel>Nome</FormLabel><FormControl><Input {...field} /></FormControl><FormMessage /></FormItem>)} />
+                                    <FormField control={form.control} name="type" render={({ field }) => (<FormItem><FormLabel>Tipo</FormLabel><FormControl><Input placeholder="es. Arma (spada lunga), Armatura (piastre)..." {...field} /></FormControl><FormMessage /></FormItem>)} />
+                                </div>
+                                <div className="w-full sm:w-32 space-y-2">
+                                    <Label>Miniatura / Immagine</Label>
+                                    <div className="relative aspect-square bg-muted rounded-md overflow-hidden border border-dashed flex items-center justify-center group">
+                                        {form.watch('imageUrl') ? (
+                                            <Image src={form.watch('imageUrl')!} alt="Anteprima" fill className="object-cover" />
+                                        ) : (
+                                            <ImagePlus className="h-8 w-8 text-muted-foreground" />
+                                        )}
+                                        <input type="file" accept="image/*" onChange={handleFileChange} className="absolute inset-0 opacity-0 cursor-pointer" disabled={isUploading} />
+                                        {isUploading && <div className="absolute inset-0 bg-background/50 flex items-center justify-center"><Loader2 className="animate-spin" /></div>}
+                                    </div>
+                                    <Button type="button" variant="link" size="sm" className="p-0 h-auto text-[10px] w-full text-center" onClick={() => form.setValue('imageUrl', '')}>Rimuovi</Button>
+                                </div>
+                            </div>
+
+                            <div className="grid grid-cols-2 gap-4">
+                                <FormField control={form.control} name="rarity" render={({ field }) => (<FormItem><FormLabel>Rarità</FormLabel><FormControl><Input placeholder="es. Comune, Non comune, Rara..." {...field} /></FormControl><FormMessage /></FormItem>)} />
+                                <FormField control={form.control} name="cost" render={({ field }) => (<FormItem><FormLabel>Costo</FormLabel><FormControl><Input placeholder="es. 500 mo" {...field} value={field.value ?? ''} /></FormControl><FormMessage /></FormItem>)} />
+                            </div>
                             
                             <div className="p-4 bg-muted/30 rounded-lg space-y-4 border">
                                 <FormField control={form.control} name="damage" render={({ field }) => (<FormItem><FormLabel>Danno / CA / Cariche</FormLabel><FormControl><Input placeholder="es. 1d8 tagliente, CA +1, 3 cariche..." {...field} value={field.value ?? ''} /></FormControl><FormMessage /></FormItem>)} />
@@ -204,6 +252,7 @@ export function EquipmentDb({ armor, weapons, magicArmor, magicWeapons, campaign
   const [showPossessed, setShowPossessed] = useState(false);
   const [selectedRarities, setSelectedRarities] = useState<string[]>([]);
   const [sourceFilter, setSourceFilter] = useState<'all' | 'base' | 'created'>('all');
+  const [lightboxImage, setLightboxImage] = useState<string | null>(null);
 
   const handleRarityChange = (rarity: string) => {
     setSelectedRarities(prev => 
@@ -420,7 +469,19 @@ export function EquipmentDb({ armor, weapons, magicArmor, magicWeapons, campaign
                 <AccordionItem value={item.name} key={item.name}>
                   <AccordionPrimitive.Header className="flex items-center">
                     <AccordionPrimitive.Trigger className="flex flex-1 items-center justify-between py-4 font-medium text-left transition-all hover:underline [&[data-state=open]>svg]:rotate-180">
-                      <div className="flex items-center gap-2 flex-wrap">
+                      <div className="flex items-center gap-2.5 flex-wrap">
+                        {'imageUrl' in item && (item as any).imageUrl && (
+                          <div 
+                            className="relative w-8 h-8 rounded-full overflow-hidden border border-amber-500/40 shrink-0 bg-muted cursor-pointer hover:ring-2 hover:ring-amber-500/50 transition-all"
+                            title="Ingrandisci miniatura"
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              setLightboxImage((item as any).imageUrl || null);
+                            }}
+                          >
+                            <Image src={(item as any).imageUrl} alt={item.name} fill className="object-cover" />
+                          </div>
+                        )}
                         <span className="break-words pr-2">{item.name}</span>
                         {('source' in item && item.source === 'created') && <Badge variant="secondary"><PlusCircle className="h-3 w-3 mr-1"/>Creato</Badge>}
                         {item.rarity && <Badge variant="outline">{item.rarity}</Badge>}
@@ -463,24 +524,35 @@ export function EquipmentDb({ armor, weapons, magicArmor, magicWeapons, campaign
                     </div>
                   </AccordionPrimitive.Header>
                   <AccordionContent>
-                      <div className="prose prose-sm prose-invert max-w-none">
-                        <div className="space-y-2">
-                          <DetailItem label="Tipo" value={item.type} />
-                          <DetailItem label="Costo" value={item.cost} />
-                          {'armorClass' in item ? (
-                              <>
-                                <DetailItem label="Classe Armatura" value={item.armorClass} />
-                                <DetailItem label="Forza Richiesta" value={item.strength} />
-                                <DetailItem label="Furtività" value={item.stealth} />
-                                <DetailItem label="Peso" value={item.weight} />
-                              </>
-                          ) : (
-                              <>
-                                {'attunement' in item && item.attunement && item.attunement !== 'No' && <DetailItem label="Sintonia" value={item.attunement} />}
-                                <Separator className="my-2" />
-                                <MarkdownRenderer content={'description' in item ? (item.description || '') : ''} className="text-sm font-serif" />
-                              </>
-                          )}
+                      <div className="flex flex-col sm:flex-row gap-6">
+                        {'imageUrl' in item && (item as any).imageUrl && (
+                            <div 
+                              className="relative w-full sm:w-48 aspect-square rounded-lg overflow-hidden border bg-muted flex-shrink-0 cursor-pointer hover:opacity-90 transition-opacity"
+                              title="Clicca per ingrandire"
+                              onClick={() => setLightboxImage((item as any).imageUrl || null)}
+                            >
+                                <Image src={(item as any).imageUrl} alt={item.name} fill className="object-cover" />
+                            </div>
+                        )}
+                        <div className="prose prose-sm prose-invert max-w-none flex-grow">
+                          <div className="space-y-2">
+                            <DetailItem label="Tipo" value={item.type} />
+                            <DetailItem label="Costo" value={item.cost} />
+                            {'armorClass' in item ? (
+                                <>
+                                  <DetailItem label="Classe Armatura" value={item.armorClass} />
+                                  <DetailItem label="Forza Richiesta" value={item.strength} />
+                                  <DetailItem label="Furtività" value={item.stealth} />
+                                  <DetailItem label="Peso" value={item.weight} />
+                                </>
+                            ) : (
+                                <>
+                                  {'attunement' in item && item.attunement && item.attunement !== 'No' && <DetailItem label="Sintonia" value={item.attunement} />}
+                                  <Separator className="my-2" />
+                                  <MarkdownRenderer content={'description' in item ? (item.description || '') : ''} className="text-sm font-serif" />
+                                </>
+                            )}
+                          </div>
                         </div>
                       </div>
                       {('source' in item && item.source === 'created' && item.id) && (
@@ -517,7 +589,19 @@ export function EquipmentDb({ armor, weapons, magicArmor, magicWeapons, campaign
                 <AccordionItem value={item.name} key={item.name}>
                   <AccordionPrimitive.Header className="flex items-center">
                     <AccordionPrimitive.Trigger className="flex flex-1 items-center justify-between py-4 font-medium text-left transition-all hover:underline [&[data-state=open]>svg]:rotate-180">
-                      <div className="flex items-center gap-2 flex-wrap">
+                      <div className="flex items-center gap-2.5 flex-wrap">
+                        {'imageUrl' in item && (item as any).imageUrl && (
+                          <div 
+                            className="relative w-8 h-8 rounded-full overflow-hidden border border-amber-500/40 shrink-0 bg-muted cursor-pointer hover:ring-2 hover:ring-amber-500/50 transition-all"
+                            title="Ingrandisci miniatura"
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              setLightboxImage((item as any).imageUrl || null);
+                            }}
+                          >
+                            <Image src={(item as any).imageUrl} alt={item.name} fill className="object-cover" />
+                          </div>
+                        )}
                         <span className="break-words pr-2">{item.name}</span>
                           {('source' in item && item.source === 'created') && <Badge variant="secondary"><PlusCircle className="h-3 w-3 mr-1"/>Creato</Badge>}
                           {item.rarity && <Badge variant="outline">{item.rarity}</Badge>}
@@ -560,23 +644,34 @@ export function EquipmentDb({ armor, weapons, magicArmor, magicWeapons, campaign
                     </div>
                   </AccordionPrimitive.Header>
                   <AccordionContent>
-                      <div className="prose prose-sm prose-invert max-w-none">
-                        <div className="space-y-2">
-                          <DetailItem label="Tipo" value={item.type} />
-                          <DetailItem label="Costo" value={item.cost} />
-                          <DetailItem label="Danno" value={(item as any).damage} />
-                          {'damage' in item && 'properties' in item ? (
-                            <>
-                              <DetailItem label="Peso" value={(item as Weapon).weight} />
-                              <DetailItem label="Proprietà" value={(item as Weapon).properties} />
-                            </>
-                          ) : (
-                            <>
-                              {'attunement' in item && item.attunement && item.attunement !== 'No' && <DetailItem label="Sintonia" value={item.attunement} />}
-                              <Separator className="my-2"/>
-                              <MarkdownRenderer content={'description' in item ? (item.description || '') : ''} className="text-sm font-serif" />
-                            </>
-                          )}
+                      <div className="flex flex-col sm:flex-row gap-6">
+                        {'imageUrl' in item && (item as any).imageUrl && (
+                            <div 
+                              className="relative w-full sm:w-48 aspect-square rounded-lg overflow-hidden border bg-muted flex-shrink-0 cursor-pointer hover:opacity-90 transition-opacity"
+                              title="Clicca per ingrandire"
+                              onClick={() => setLightboxImage((item as any).imageUrl || null)}
+                            >
+                                <Image src={(item as any).imageUrl} alt={item.name} fill className="object-cover" />
+                            </div>
+                        )}
+                        <div className="prose prose-sm prose-invert max-w-none flex-grow">
+                          <div className="space-y-2">
+                            <DetailItem label="Tipo" value={item.type} />
+                            <DetailItem label="Costo" value={item.cost} />
+                            <DetailItem label="Danno" value={(item as any).damage} />
+                            {'damage' in item && 'properties' in item ? (
+                              <>
+                                <DetailItem label="Peso" value={(item as Weapon).weight} />
+                                <DetailItem label="Proprietà" value={(item as Weapon).properties} />
+                              </>
+                            ) : (
+                              <>
+                                {'attunement' in item && item.attunement && item.attunement !== 'No' && <DetailItem label="Sintonia" value={item.attunement} />}
+                                <Separator className="my-2"/>
+                                <MarkdownRenderer content={'description' in item ? (item.description || '') : ''} className="text-sm font-serif" />
+                              </>
+                            )}
+                          </div>
                         </div>
                       </div>
                       {('source' in item && item.source === 'created' && item.id) && (
@@ -602,6 +697,24 @@ export function EquipmentDb({ armor, weapons, magicArmor, magicWeapons, campaign
           </CardContent>
         </Card>
       </TabsContent>
+
+      {lightboxImage && (
+        <Dialog open={!!lightboxImage} onOpenChange={(open) => { if (!open) setLightboxImage(null); }}>
+          <DialogContent className="sm:max-w-3xl p-2 bg-black/90 border-amber-500/30">
+            <DialogHeader className="sr-only">
+              <DialogTitle>Ingrandimento Immagine</DialogTitle>
+            </DialogHeader>
+            <div className="relative w-full h-[75vh] flex items-center justify-center">
+              <Image
+                src={lightboxImage}
+                alt="Anteprima Ingrandita"
+                fill
+                className="object-contain rounded-md"
+              />
+            </div>
+          </DialogContent>
+        </Dialog>
+      )}
     </Tabs>
   );
 }
