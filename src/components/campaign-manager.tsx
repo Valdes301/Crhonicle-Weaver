@@ -97,7 +97,6 @@ async function safeImport<T>(importFn: () => Promise<T>, retries = 3, delay = 40
 
 // Standard dynamic imports with safe fallback
 const EquipmentDb = dynamic(() => safeImport(() => import('./equipment-db')).then(m => m.EquipmentDb), { ssr: false, loading: ToolLoadingFallback });
-const ItemsDb = dynamic(() => safeImport(() => import('./items-db')).then(m => m.ItemsDb), { ssr: false, loading: ToolLoadingFallback });
 const MonstersDb = dynamic(() => safeImport(() => import('./monsters-db')).then(m => m.MonstersDb), { ssr: false, loading: ToolLoadingFallback });
 const SpellsDb = dynamic(() => safeImport(() => import('./spells-db')).then(m => m.SpellsDb), { ssr: false, loading: ToolLoadingFallback });
 const SkillsDb = dynamic(() => safeImport(() => import('./skills-db')).then(m => m.SkillsDb), { ssr: false, loading: ToolLoadingFallback });
@@ -172,8 +171,7 @@ const VIEW_METADATA: Record<string, { title: string, desc: string, icon: any }> 
     'manuale': { title: 'Manuale di Gioco', desc: 'Consulta le regole del PHB, DMG e del Tesserato.', icon: BookOpen },
     'manuale-importa': { title: 'Importazione Intelligente', desc: 'Estrai dati tecnici dai tuoi manuali con scansione visiva e ritaglio token.', icon: Sparkles },
     'abilità': { title: 'Abilità', desc: 'Consulta il compendio delle capacità 5e.', icon: BrainCircuit },
-    'equipaggiamento': { title: 'Armeria', desc: 'Armi, armature e scudi comuni e magici.', icon: Sword },
-    'oggetti': { title: 'Oggetti', desc: 'Database di oggetti meravigliosi e pozioni.', icon: Sparkles },
+    'equipaggiamento': { title: 'Armeria', desc: 'Armi, armature, strumenti d\'assedio e oggetti magici.', icon: Sword },
     'bestiario': { title: 'Bestiario', desc: 'Statistiche e illustrazioni delle creature.', icon: Skull },
     'magie': { title: 'Incantesimi', desc: 'Il grimorio arcano della campagna.', icon: Wand },
     'mappe': { title: 'Mappe', desc: 'Cartografia vettoriale generata dall\'IA.', icon: Map },
@@ -379,8 +377,8 @@ function ManagerContent(props: CampaignManagerProps & { initialView?: string; on
         case 'homebrew': return <HomebrewCompendium campaign={activeCampaign} />;
         case 'riepilogo-png': return <NpcSummary campaignId={activeCampaign.id} npcs={npcs} />;
         case 'abilità': return <SkillsDb skills={compendia.skills} campaignId={activeCampaign.id} onSave={actions.saveSkill} onDelete={actions.deleteSkill} possessedItems={possessedItems} onTogglePossession={(itemName: string) => actions.toggleItemPossession(activeCampaign.id, itemName)} />;
-        case 'equipaggiamento': return <EquipmentDb campaignId={activeCampaign.id} armor={compendia.allArmor} weapons={compendia.allWeapons} magicArmor={compendia.magicArmor} magicWeapons={compendia.magicWeapons} onSaveItem={actions.saveMagicItem} onDeleteItem={actions.deleteMagicItem} possessedItems={possessedItems} onTogglePossession={(itemName: string) => actions.toggleItemPossession(activeCampaign.id, itemName)} />;
-        case 'oggetti': return <ItemsDb magicItems={compendia.dbMagicItems} campaignId={activeCampaign.id} onSaveItem={actions.saveMagicItem} onDeleteItem={actions.deleteMagicItem} possessedItems={possessedItems} onTogglePossession={(itemName: string) => actions.toggleItemPossession(activeCampaign.id, itemName)} />;
+        case 'oggetti':
+        case 'equipaggiamento': return <EquipmentDb campaignId={activeCampaign.id} armor={compendia.allArmor} weapons={compendia.allWeapons} magicArmor={compendia.magicArmor} magicWeapons={compendia.magicWeapons} allItems={compendia.allItems} onSaveItem={actions.saveMagicItem} onDeleteItem={actions.deleteMagicItem} possessedItems={possessedItems} onTogglePossession={(itemName: string) => actions.toggleItemPossession(activeCampaign.id, itemName)} />;
         case 'bestiario': return <MonstersDb monsters={compendia.dbMonsters} campaignId={activeCampaign.id} onSave={wrapReload(actions.saveMonster)} onDelete={(idOrName: string, name?: string) => wrapReload(actions.deleteMonster)(idOrName, name, activeCampaign.id)} possessedItems={possessedItems} onTogglePossession={(itemName: string) => actions.toggleItemPossession(activeCampaign.id, itemName)} />;
         case 'magie': return <SpellsDb spells={compendia.dbSpells} campaignId={activeCampaign.id} onSave={actions.saveSpell} onDelete={actions.deleteSpell} possessedItems={possessedItems} onTogglePossession={(itemName: string) => actions.toggleItemPossession(activeCampaign.id, itemName)} />;
         case 'mappe': return <MapGenerator />;

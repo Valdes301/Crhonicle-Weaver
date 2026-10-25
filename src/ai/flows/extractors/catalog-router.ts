@@ -80,8 +80,9 @@ OBIETTIVO: Analizza con assoluta fedeltà l'immagine e/o il testo ed estrai TUTT
    - Includi qui paragrafi di regole, tabelle di gioco (es. 'Improvvisare i Danni', 'Gravità dei Danni per Livello'), sezioni sulla conduzione del gioco, prove di abilità/caratteristica, gradi di successo e fallimento, svantaggio, condizioni, esplorazione e combattimento tratte dalla Guida del Dungeon Master (DMG) o Manuale del Giocatore (PHB).
    - NON inserire mostri o le loro capacità di tana dentro 'rules'.
 
-3. 'items' (Armeria ed Oggetti Magici/Meravigliosi):
-   - 'category': "Armeria" (armi, armature, scudi) oppure "Oggetti" (oggetti magici, pozioni, arnesi).
+3. 'items' (Armeria ed Oggetti Magici/Meravigliosi / Armi d'Assedio & Veicoli):
+   - 'category': "Armeria" (armi, armature, scudi, armi d'assedio) oppure "Oggetti" (oggetti magici, pozioni, arnesi).
+   - ATTENZIONE AGLI OGGETTI D'ASSEDIO E STRUMENTI DEL DM: Se l'intestazione o il tipo riporta "Oggetto [Taglia]" (es. Oggetto Grande, Oggetto Enorme, Oggetto Mastodontico) oppure fa riferimento ad Armi d'Assedio o Strumenti del DM (es. Lanciabarili, Manganella, Trabucco, Torre d'Assedio, Carrozza Lanciafiamme), DEVI categorizzarlo rigorosamente dentro 'items' (Armeria / Oggetti d'Assedio) e NON dentro 'monsters', anche se presenta valori di Classe Armatura e Punti Ferita.
    - 'name', 'type', 'rarity', 'attunement', 'cost', 'weight', 'damage', 'armorClass', 'description', 'imageBox'.
 
 4. 'spells' (Incantesimi e Magie):
@@ -521,6 +522,31 @@ async function extractUnifiedContent(input: CatalogRouterInput): Promise<Catalog
                 content: desc,
                 sourceBook: 'dmg',
                 tags: ['regole', 'conduzione-gioco', 'tabelle']
+            });
+            continue;
+        }
+
+        // Controllo se è un'Arma d'Assedio / Oggetto (es. Lanciabarili, Trabucco, Manganella, Oggetto Grande)
+        const lowType = (m.type || '').toString().toLowerCase();
+        const isSiegeObject = lowName.includes('lanciabarili') ||
+                              lowName.includes('manganella') ||
+                              lowName.includes('trabucco') ||
+                              lowName.includes('torre d\'assedio') ||
+                              lowName.includes('carrozza') ||
+                              lowType.startsWith('oggetto') ||
+                              lowType.includes('arma d\'assedio') ||
+                              lowType.includes('strumenti del dm');
+
+        if (isSiegeObject) {
+            rawItems.push({
+                name: formatTitleOrTag(rawName),
+                category: 'Armeria',
+                type: m.type || 'Oggetto / Arma d\'Assedio',
+                cost: '—',
+                armorClass: ac,
+                damage: hp ? `PF: ${hp}` : '',
+                description: desc,
+                imageBox: m.imageBox || null
             });
             continue;
         }

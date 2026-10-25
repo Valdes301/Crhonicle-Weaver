@@ -91,7 +91,6 @@ const handbookItems = [
     { id: 'manuale-importa', label: 'Importazione Intelligente', icon: Sparkles },
     { id: 'abilità', label: 'Abilità', icon: BrainCircuit },
     { id: 'equipaggiamento', label: 'Armeria', icon: Sword },
-    { id: 'oggetti', label: 'Oggetti', icon: Sparkles },
     { id: 'bestiario', label: 'Bestiario', icon: Skull },
     { id: 'magie', label: 'Incantesimi', icon: Wand },
 ];
@@ -236,7 +235,7 @@ export const SidebarNav = memo(function SidebarNav({ activeView, onViewChange, o
 
   const handleViewChange = (view: string) => {
     setIsTouchBlocking(true);
-    setTimeout(() => setIsTouchBlocking(false), 350);
+    setTimeout(() => setIsTouchBlocking(false), 1200);
 
     if (view === 'bacheca') {
       onViewChange(null);

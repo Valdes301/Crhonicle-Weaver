@@ -3903,19 +3903,9 @@ export function ContentImporterNew({ campaignId }: ContentImporterNewProps) {
                                 <img
                                   src={e.thumbnailUrl}
                                   alt=""
-                                  onClick={() => {
-                                    const pages = e.pageImages && e.pageImages.length > 0 ? e.pageImages : (e.rawPageImage ? [e.rawPageImage] : (e.imageUrl ? [e.imageUrl] : []));
-                                    setFramerModal({
-                                      isOpen: true,
-                                      targetId: e.id,
-                                      targetType: 'equipment',
-                                      imageSrc: (e.rawPageImage || (pages && pages[0]) || e.imageUrl)!,
-                                      name: e.name,
-                                      availablePages: pages
-                                    });
-                                  }}
+                                  onClick={() => { setLightboxUrl(e.thumbnailUrl || null); setLightboxZoom(1); }}
                                   className="w-9 h-9 rounded-full object-cover border-2 border-amber-500/80 cursor-pointer shadow-sm hover:scale-110 transition-transform"
-                                  title="Miniatura (clicca per inquadrare o modificare)"
+                                  title="Miniatura (clicca per ingrandire con zoom)"
                                 />
                               ) : (
                                 (e.rawPageImage || e.imageUrl || (e.pageImages && e.pageImages.length > 0)) && (
@@ -4101,19 +4091,9 @@ export function ContentImporterNew({ campaignId }: ContentImporterNewProps) {
                                 <img
                                   src={item.thumbnailUrl}
                                   alt=""
-                                  onClick={() => {
-                                    const pages = item.pageImages && item.pageImages.length > 0 ? item.pageImages : (item.rawPageImage ? [item.rawPageImage] : (item.imageUrl ? [item.imageUrl] : []));
-                                    setFramerModal({
-                                      isOpen: true,
-                                      targetId: item.id,
-                                      targetType: 'item',
-                                      imageSrc: (item.rawPageImage || (pages && pages[0]) || item.imageUrl)!,
-                                      name: item.name,
-                                      availablePages: pages
-                                    });
-                                  }}
+                                  onClick={() => { setLightboxUrl(item.thumbnailUrl || null); setLightboxZoom(1); }}
                                   className="w-9 h-9 rounded-full object-cover border-2 border-amber-500/80 cursor-pointer shadow-sm hover:scale-110 transition-transform"
-                                  title="Miniatura (clicca per inquadrare o modificare)"
+                                  title="Miniatura (clicca per ingrandire con zoom)"
                                 />
                               ) : (
                                 (item.rawPageImage || item.imageUrl || (item.pageImages && item.pageImages.length > 0)) && (
