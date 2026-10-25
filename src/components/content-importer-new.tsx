@@ -248,7 +248,28 @@ export function ContentImporterNew({ campaignId }: ContentImporterNewProps) {
 
   // Ispezione Log di Debug Temporaneo (data/last_scan_debug.json)
   const [showDebugModal, setShowDebugModal] = useState<boolean>(false);
-  const [duplicateDialog, setDuplicateDialog] = useState<{ isOpen: boolean; monster: ExtractedMonsterCard; existingName: string; existingId: string } | null>(null);
+  const conflictResolverRef = useRef<((choice: 'overwrite' | 'skip') => void) | null>(null);
+  const [duplicateDialog, setDuplicateDialog] = useState<{
+    isOpen: boolean;
+    type: 'monster' | 'equipment' | 'item' | 'spell' | 'skill';
+    item: any;
+    existingName: string;
+    existingId: string;
+    bulkIndex?: number;
+    bulkTotal?: number;
+  } | null>(null);
+  const [savingAllProgress, setSavingAllProgress] = useState<{
+    isActive: boolean;
+    current: number;
+    total: number;
+    currentName: string;
+    category: string;
+    saved: number;
+    overwritten: number;
+    skipped: number;
+    errors: number;
+    isPausedForConflict: boolean;
+  } | null>(null);
   const [debugLogData, setDebugLogData] = useState<any>(null);
   const [isLoadingDebugLog, setIsLoadingDebugLog] = useState<boolean>(false);
   const [copiedLog, setCopiedLog] = useState<boolean>(false);
@@ -2012,20 +2033,183 @@ export function ContentImporterNew({ campaignId }: ContentImporterNewProps) {
     toast({ title: "Scansione Interrotta", description: "Tutti i processi server sono stati fermati e gli elementi estratti finora sono stati preservati." });
   };
 
+  // Gestione Conflitti e Duplicati con Decisione Singola
+  const requestConflictResolution = (conflictInfo: {
+    type: 'monster' | 'equipment' | 'item' | 'spell' | 'skill';
+    item: any;
+    existingName: string;
+    existingId: string;
+    bulkIndex?: number;
+    bulkTotal?: number;
+  }): Promise<'overwrite' | 'skip'> => {
+    return new Promise<'overwrite' | 'skip'>((resolve) => {
+      conflictResolverRef.current = resolve;
+      setDuplicateDialog({
+        isOpen: true,
+        ...conflictInfo,
+      });
+    });
+  };
+
+  const executeOverwrite = async (type: string, item: any, existingId: string): Promise<boolean> => {
+    if (type === 'monster') {
+      setMonsters(prev => prev.map(m => m.id === item.id ? { ...m, isSaving: true } : m));
+      try {
+        const res = await actions.saveMonster({
+          campaignId,
+          id: existingId,
+          overwrite: true,
+          name: item.name,
+          type: sanitizeMonsterType(item.type),
+          armorClass: item.armorClass,
+          hitPoints: item.hitPoints,
+          challenge: item.challenge,
+          description: cleanAiHallucinatoryLoops(item.description),
+          imageUrl: item.imageUrl || undefined,
+          thumbnailUrl: item.thumbnailUrl || undefined,
+        });
+        if (res.success) {
+          setMonsters(prev => prev.map(m => m.id === item.id ? { ...m, savedCampaign: true, savedGlobal: true, isSaving: false } : m));
+          toast({ title: `"${item.name}" sovrascritto con successo nel Bestiario!` });
+          triggerGlobalSync();
+          return true;
+        } else {
+          throw new Error(res.error || "Errore sovrascrittura mostro");
+        }
+      } catch (e: any) {
+        setMonsters(prev => prev.map(m => m.id === item.id ? { ...m, isSaving: false } : m));
+        toast({ variant: 'destructive', title: "Errore Sovrascrittura", description: e.message });
+        return false;
+      }
+    } else if (type === 'equipment' || type === 'item') {
+      const isEq = type === 'equipment';
+      const setList = isEq ? setEquipment : setMagicItems;
+      setList((prev: any[]) => prev.map(i => i.id === item.id ? { ...i, isSaving: true } : i));
+      try {
+        const res = await actions.saveMagicItem({
+          campaignId,
+          id: existingId,
+          overwrite: true,
+          name: item.name,
+          type: item.type || (isEq ? 'Armeria' : 'Oggetto Meraviglioso'),
+          rarity: item.rarity || 'Comune',
+          attunement: item.attunement || 'No',
+          description: item.description,
+          cost: item.cost || '',
+          damage: item.damage || '',
+          imageUrl: item.imageUrl || null,
+          techType: isEq ? 'damage' : 'alchemy'
+        });
+        if (res.success) {
+          setList((prev: any[]) => prev.map(i => i.id === item.id ? { ...i, savedCampaign: true, savedGlobal: true, isSaving: false } : i));
+          toast({ title: `"${item.name}" sovrascritto con successo!` });
+          triggerGlobalSync();
+          return true;
+        } else {
+          throw new Error(res.error || "Errore sovrascrittura oggetto");
+        }
+      } catch (e: any) {
+        setList((prev: any[]) => prev.map(i => i.id === item.id ? { ...i, isSaving: false } : i));
+        toast({ variant: 'destructive', title: "Errore Sovrascrittura", description: e.message });
+        return false;
+      }
+    } else if (type === 'spell') {
+      setSpells(prev => prev.map(s => s.id === item.id ? { ...s, isSaving: true } : s));
+      try {
+        const res = await actions.saveSpell({
+          campaignId,
+          id: existingId,
+          overwrite: true,
+          name: item.name,
+          level: item.level,
+          school: item.school,
+          casting_time: item.casting_time,
+          range: item.range,
+          components: item.components,
+          duration: item.duration,
+          classes: item.classes,
+          description: item.description
+        });
+        if (res.success) {
+          setSpells(prev => prev.map(s => s.id === item.id ? { ...s, savedCampaign: true, savedGlobal: true, isSaving: false } : s));
+          toast({ title: `"${item.name}" sovrascritto nel Grimorio!` });
+          triggerGlobalSync();
+          return true;
+        } else {
+          throw new Error(res.error || "Errore sovrascrittura incantesimo");
+        }
+      } catch (e: any) {
+        setSpells(prev => prev.map(s => s.id === item.id ? { ...s, isSaving: false } : s));
+        toast({ variant: 'destructive', title: "Errore Sovrascrittura", description: e.message });
+        return false;
+      }
+    } else if (type === 'skill') {
+      setSkills(prev => prev.map(sk => sk.id === item.id ? { ...sk, isSaving: true } : sk));
+      try {
+        const res = await actions.saveSkill({
+          campaignId,
+          id: existingId,
+          overwrite: true,
+          name: item.name,
+          ability: item.ability || item.type || 'Varia',
+          description: item.description
+        });
+        if (res.success) {
+          setSkills(prev => prev.map(sk => sk.id === item.id ? { ...sk, savedCampaign: true, savedGlobal: true, isSaving: false } : sk));
+          toast({ title: `"${item.name}" sovrascritta con successo!` });
+          triggerGlobalSync();
+          return true;
+        } else {
+          throw new Error(res.error || "Errore sovrascrittura abilità");
+        }
+      } catch (e: any) {
+        setSkills(prev => prev.map(sk => sk.id === item.id ? { ...sk, isSaving: false } : sk));
+        toast({ variant: 'destructive', title: "Errore Sovrascrittura", description: e.message });
+        return false;
+      }
+    }
+    return false;
+  };
+
+  const handleConfirmOverwrite = async () => {
+    if (!duplicateDialog) return;
+    const { type, item, existingId } = duplicateDialog;
+    const resolver = conflictResolverRef.current;
+    conflictResolverRef.current = null;
+    setDuplicateDialog(null);
+
+    await executeOverwrite(type, item, existingId);
+    if (resolver) {
+      resolver('overwrite');
+    }
+  };
+
+  const handleSkipDuplicate = () => {
+    const resolver = conflictResolverRef.current;
+    conflictResolverRef.current = null;
+    setDuplicateDialog(null);
+    if (resolver) {
+      resolver('skip');
+    }
+  };
+
   // Salvataggio Singolo per categoria
   const handleSaveMonster = async (monster: ExtractedMonsterCard, target: 'campaign' | 'global' = 'campaign') => {
     setMonsters(prev => prev.map(m => m.id === monster.id ? { ...m, isSaving: true } : m));
     try {
       const checkRes = await actions.checkIfMonsterExists(monster.name, campaignId);
       if (checkRes.success && checkRes.data?.conflict) {
-          setDuplicateDialog({
-            isOpen: true,
-            monster,
-            existingName: checkRes.data.existingName,
-            existingId: checkRes.data.existingId
-          });
-          setMonsters(prev => prev.map(m => m.id === monster.id ? { ...m, isSaving: false } : m));
-          return;
+        setMonsters(prev => prev.map(m => m.id === monster.id ? { ...m, isSaving: false } : m));
+        const decision = await requestConflictResolution({
+          type: 'monster',
+          item: monster,
+          existingName: checkRes.data.existingName,
+          existingId: checkRes.data.existingId
+        });
+        if (decision === 'overwrite') {
+          await executeOverwrite('monster', monster, checkRes.data.existingId);
+        }
+        return;
       }
       
       const res = await actions.saveMonster({
@@ -2057,37 +2241,24 @@ export function ContentImporterNew({ campaignId }: ContentImporterNewProps) {
     }
   };
 
-  const handleConfirmOverwrite = async () => {
-        if (!duplicateDialog) return;
-        const { monster, existingId } = duplicateDialog;
-        setDuplicateDialog(null);
-        setMonsters(prev => prev.map(m => m.id === monster.id ? { ...m, isSaving: true } : m));
-        try {
-            await actions.saveMonster({
-                campaignId,
-                id: existingId,
-                overwrite: true,
-                name: monster.name,
-                type: sanitizeMonsterType(monster.type),
-                armorClass: monster.armorClass,
-                hitPoints: monster.hitPoints,
-                challenge: monster.challenge,
-                description: cleanAiHallucinatoryLoops(monster.description),
-                imageUrl: monster.imageUrl || undefined,
-                thumbnailUrl: monster.thumbnailUrl || undefined,
-            });
-            setMonsters(prev => prev.map(m => m.id === monster.id ? { ...m, savedCampaign: true, savedGlobal: true, isSaving: false } : m));
-            toast({ title: `"${monster.name}" sovrascritto con successo!` });
-            triggerGlobalSync();
-        } catch (e: any) {
-            setMonsters(prev => prev.map(m => m.id === monster.id ? { ...m, isSaving: false } : m));
-            toast({ variant: 'destructive', title: "Errore Sovrascrittura", description: e.message });
-        }
-  };
-
   const handleSaveEquipment = async (item: ExtractedEquipmentCard, target: 'campaign' | 'global') => {
     setEquipment(prev => prev.map(e => e.id === item.id ? { ...e, isSaving: true } : e));
     try {
+      const checkRes = await actions.checkIfItemExists(item.name, campaignId);
+      if (checkRes.success && checkRes.data?.conflict) {
+        setEquipment(prev => prev.map(e => e.id === item.id ? { ...e, isSaving: false } : e));
+        const decision = await requestConflictResolution({
+          type: 'equipment',
+          item,
+          existingName: checkRes.data.existingName,
+          existingId: checkRes.data.existingId
+        });
+        if (decision === 'overwrite') {
+          await executeOverwrite('equipment', item, checkRes.data.existingId);
+        }
+        return;
+      }
+
       const res = await actions.saveMagicItem({
         campaignId,
         name: item.name,
@@ -2121,6 +2292,21 @@ export function ContentImporterNew({ campaignId }: ContentImporterNewProps) {
   const handleSaveMagicItem = async (item: ExtractedMagicItemCard, target: 'campaign' | 'global') => {
     setMagicItems(prev => prev.map(i => i.id === item.id ? { ...i, isSaving: true } : i));
     try {
+      const checkRes = await actions.checkIfItemExists(item.name, campaignId);
+      if (checkRes.success && checkRes.data?.conflict) {
+        setMagicItems(prev => prev.map(i => i.id === item.id ? { ...i, isSaving: false } : i));
+        const decision = await requestConflictResolution({
+          type: 'item',
+          item,
+          existingName: checkRes.data.existingName,
+          existingId: checkRes.data.existingId
+        });
+        if (decision === 'overwrite') {
+          await executeOverwrite('item', item, checkRes.data.existingId);
+        }
+        return;
+      }
+
       const res = await actions.saveMagicItem({
         campaignId,
         name: item.name,
@@ -2146,7 +2332,7 @@ export function ContentImporterNew({ campaignId }: ContentImporterNewProps) {
         throw new Error(res.error || "Errore salvataggio oggetto");
       }
     } catch (e: any) {
-      setMagicItems(prev => prev.map(i => i.id === item.id ? { ...i, isSaving: false } : i));
+      setMagicItems(prev => prev.map(i => i.id === item.id ? { ...i, isSaving: false } : e));
       toast({ variant: 'destructive', title: "Errore Salvataggio", description: e.message });
     }
   };
@@ -2154,6 +2340,21 @@ export function ContentImporterNew({ campaignId }: ContentImporterNewProps) {
   const handleSaveSpell = async (spell: ExtractedSpellCard, target: 'campaign' | 'global') => {
     setSpells(prev => prev.map(s => s.id === spell.id ? { ...s, isSaving: true } : s));
     try {
+      const checkRes = await actions.checkIfSpellExists(spell.name, campaignId);
+      if (checkRes.success && checkRes.data?.conflict) {
+        setSpells(prev => prev.map(s => s.id === spell.id ? { ...s, isSaving: false } : s));
+        const decision = await requestConflictResolution({
+          type: 'spell',
+          item: spell,
+          existingName: checkRes.data.existingName,
+          existingId: checkRes.data.existingId
+        });
+        if (decision === 'overwrite') {
+          await executeOverwrite('spell', spell, checkRes.data.existingId);
+        }
+        return;
+      }
+
       const res = await actions.saveSpell({
         campaignId,
         name: spell.name,
@@ -2187,6 +2388,21 @@ export function ContentImporterNew({ campaignId }: ContentImporterNewProps) {
   const handleSaveSkill = async (skill: ExtractedSkillCard, target: 'campaign' | 'global') => {
     setSkills(prev => prev.map(sk => sk.id === skill.id ? { ...sk, isSaving: true } : sk));
     try {
+      const checkRes = await actions.checkIfSkillExists(skill.name, campaignId);
+      if (checkRes.success && checkRes.data?.conflict) {
+        setSkills(prev => prev.map(sk => sk.id === skill.id ? { ...sk, isSaving: false } : sk));
+        const decision = await requestConflictResolution({
+          type: 'skill',
+          item: skill,
+          existingName: checkRes.data.existingName,
+          existingId: checkRes.data.existingId
+        });
+        if (decision === 'overwrite') {
+          await executeOverwrite('skill', skill, checkRes.data.existingId);
+        }
+        return;
+      }
+
       const res = await actions.saveSkill({
         campaignId,
         name: skill.name,
@@ -2251,75 +2467,348 @@ export function ContentImporterNew({ campaignId }: ContentImporterNewProps) {
     }
   };
 
-  // Salvataggio di Tutto in Blocco per la scheda attiva con esecuzione parallela a lotti
-  const handleSaveAll = async () => {
-    const target = 'campaign';
-    let savedCount = 0;
+  const handleStopSaveAll = () => {
+    isAbortedRef.current = true;
+    if (conflictResolverRef.current) {
+      conflictResolverRef.current('skip');
+      conflictResolverRef.current = null;
+    }
+    setDuplicateDialog(null);
+    setSavingAllProgress(prev => prev ? { ...prev, isActive: false, isPausedForConflict: false } : null);
+    toast({ title: "Salvataggio Interrotto", description: "L'operazione è stata interrotta." });
+  };
 
-    const runInBatches = async <T,>(items: T[], batchSize: number, fn: (item: T) => Promise<boolean>) => {
-      for (let i = 0; i < items.length; i += batchSize) {
-        const batch = items.slice(i, i + batchSize);
-        const results = await Promise.allSettled(batch.map(item => fn(item)));
-        results.forEach(res => {
-          if (res.status === 'fulfilled' && res.value) {
-            savedCount++;
-          }
-        });
-      }
-    };
+  // Salvataggio di Tutto in Blocco per la scheda attiva con avanzamento visivo in tempo reale e gestione duplicati singola
+  const handleSaveAll = async () => {
+    isAbortedRef.current = false;
+
+    // Raccoglie tutti gli elementi pendenti per la scheda visualizzata
+    const pendingItems: Array<{
+      id: string;
+      category: 'monster' | 'equipment' | 'item' | 'spell' | 'skill' | 'rule';
+      name: string;
+      item: any;
+      categoryLabel: string;
+    }> = [];
 
     if (activeTab === 'all' || activeTab === 'monsters') {
-      const pending = monsters.filter(m => !m.savedCampaign);
-      await runInBatches(pending, 4, async (m) => {
-        await handleSaveMonster(m, target);
-        return true;
+      monsters.filter(m => !m.savedCampaign).forEach(m => {
+        pendingItems.push({ id: m.id, category: 'monster', name: m.name, item: m, categoryLabel: 'Mostro' });
       });
     }
 
     if (activeTab === 'all' || activeTab === 'equipment') {
-      const pending = equipment.filter(e => !e.savedCampaign);
-      await runInBatches(pending, 5, async (e) => {
-        await handleSaveEquipment(e, target);
-        return true;
+      equipment.filter(e => !e.savedCampaign).forEach(e => {
+        pendingItems.push({ id: e.id, category: 'equipment', name: e.name, item: e, categoryLabel: 'Armeria' });
       });
     }
 
     if (activeTab === 'all' || activeTab === 'items') {
-      const pending = magicItems.filter(i => !i.savedCampaign);
-      await runInBatches(pending, 5, async (item) => {
-        await handleSaveMagicItem(item, target);
-        return true;
+      magicItems.filter(i => !i.savedCampaign).forEach(i => {
+        pendingItems.push({ id: i.id, category: 'item', name: i.name, item: i, categoryLabel: 'Oggetto Magico' });
       });
     }
 
     if (activeTab === 'all' || activeTab === 'spells') {
-      const pending = spells.filter(s => target === 'campaign' ? !s.savedCampaign : !s.savedGlobal);
-      await runInBatches(pending, 5, async (s) => {
-        await handleSaveSpell(s, target);
-        return true;
+      spells.filter(s => !s.savedCampaign).forEach(s => {
+        pendingItems.push({ id: s.id, category: 'spell', name: s.name, item: s, categoryLabel: 'Incantesimo' });
       });
     }
 
     if (activeTab === 'all' || activeTab === 'skills') {
-      const pending = skills.filter(sk => target === 'campaign' ? !sk.savedCampaign : !sk.savedGlobal);
-      await runInBatches(pending, 5, async (sk) => {
-        await handleSaveSkill(sk, target);
-        return true;
+      skills.filter(sk => !sk.savedCampaign).forEach(sk => {
+        pendingItems.push({ id: sk.id, category: 'skill', name: sk.name, item: sk, categoryLabel: 'Abilità' });
       });
     }
 
     if (activeTab === 'all' || activeTab === 'rules') {
-      const pending = rules.filter(r => target === 'campaign' ? !r.savedCampaign : !r.savedGlobal);
-      await runInBatches(pending, 5, async (r) => {
-        await handleSaveRule(r, target);
-        return true;
+      rules.filter(r => !r.savedCampaign).forEach(r => {
+        pendingItems.push({ id: r.id, category: 'rule', name: r.title, item: r, categoryLabel: 'Regola' });
       });
     }
 
+    if (pendingItems.length === 0) {
+      toast({
+        title: "Nessun elemento da salvare",
+        description: "Tutti gli elementi della vista corrente risultano già salvati."
+      });
+      return;
+    }
+
+    const total = pendingItems.length;
+    let saved = 0;
+    let overwritten = 0;
+    let skipped = 0;
+    let errors = 0;
+
+    setSavingAllProgress({
+      isActive: true,
+      current: 0,
+      total,
+      currentName: pendingItems[0]?.name || '',
+      category: pendingItems[0]?.categoryLabel || '',
+      saved: 0,
+      overwritten: 0,
+      skipped: 0,
+      errors: 0,
+      isPausedForConflict: false,
+    });
+
+    for (let i = 0; i < total; i++) {
+      if (isAbortedRef.current) {
+        toast({ title: "Salvataggio Interrotto", description: "L'operazione è stata fermata dall'utente." });
+        break;
+      }
+
+      const currentItem = pendingItems[i];
+      setSavingAllProgress(prev => prev ? {
+        ...prev,
+        current: i + 1,
+        currentName: currentItem.name,
+        category: currentItem.categoryLabel,
+        isPausedForConflict: false,
+      } : null);
+
+      try {
+        if (currentItem.category === 'monster') {
+          const m = currentItem.item;
+          setMonsters(prev => prev.map(x => x.id === m.id ? { ...x, isSaving: true } : x));
+          const checkRes = await actions.checkIfMonsterExists(m.name, campaignId);
+          if (checkRes.success && checkRes.data?.conflict) {
+            setSavingAllProgress(prev => prev ? { ...prev, isPausedForConflict: true } : null);
+            setMonsters(prev => prev.map(x => x.id === m.id ? { ...x, isSaving: false } : x));
+            const choice = await requestConflictResolution({
+              type: 'monster',
+              item: m,
+              existingName: checkRes.data.existingName,
+              existingId: checkRes.data.existingId,
+              bulkIndex: i + 1,
+              bulkTotal: total,
+            });
+            if (choice === 'overwrite') {
+              overwritten++;
+            } else {
+              skipped++;
+            }
+          } else {
+            const res = await actions.saveMonster({
+              campaignId,
+              name: m.name,
+              type: sanitizeMonsterType(m.type),
+              armorClass: m.armorClass,
+              hitPoints: m.hitPoints,
+              challenge: m.challenge,
+              description: cleanAiHallucinatoryLoops(m.description),
+              imageUrl: m.imageUrl || undefined,
+              thumbnailUrl: m.thumbnailUrl || undefined,
+            });
+            if (res.success) {
+              saved++;
+              setMonsters(prev => prev.map(x => x.id === m.id ? { ...x, savedCampaign: true, savedGlobal: true, isSaving: false } : x));
+            } else {
+              errors++;
+              setMonsters(prev => prev.map(x => x.id === m.id ? { ...x, isSaving: false } : x));
+            }
+          }
+        } else if (currentItem.category === 'equipment') {
+          const e = currentItem.item;
+          setEquipment(prev => prev.map(x => x.id === e.id ? { ...x, isSaving: true } : x));
+          const checkRes = await actions.checkIfItemExists(e.name, campaignId);
+          if (checkRes.success && checkRes.data?.conflict) {
+            setSavingAllProgress(prev => prev ? { ...prev, isPausedForConflict: true } : null);
+            setEquipment(prev => prev.map(x => x.id === e.id ? { ...x, isSaving: false } : x));
+            const choice = await requestConflictResolution({
+              type: 'equipment',
+              item: e,
+              existingName: checkRes.data.existingName,
+              existingId: checkRes.data.existingId,
+              bulkIndex: i + 1,
+              bulkTotal: total,
+            });
+            if (choice === 'overwrite') {
+              overwritten++;
+            } else {
+              skipped++;
+            }
+          } else {
+            const res = await actions.saveMagicItem({
+              campaignId,
+              name: e.name,
+              type: e.type || 'Armeria',
+              rarity: 'Comune',
+              attunement: 'No',
+              description: e.description,
+              cost: e.cost || '',
+              damage: e.damage || '',
+              imageUrl: e.imageUrl || null,
+              techType: 'damage'
+            });
+            if (res.success) {
+              saved++;
+              setEquipment(prev => prev.map(x => x.id === e.id ? { ...x, savedCampaign: true, savedGlobal: true, isSaving: false } : x));
+            } else {
+              errors++;
+              setEquipment(prev => prev.map(x => x.id === e.id ? { ...x, isSaving: false } : x));
+            }
+          }
+        } else if (currentItem.category === 'item') {
+          const item = currentItem.item;
+          setMagicItems(prev => prev.map(x => x.id === item.id ? { ...x, isSaving: true } : x));
+          const checkRes = await actions.checkIfItemExists(item.name, campaignId);
+          if (checkRes.success && checkRes.data?.conflict) {
+            setSavingAllProgress(prev => prev ? { ...prev, isPausedForConflict: true } : null);
+            setMagicItems(prev => prev.map(x => x.id === item.id ? { ...x, isSaving: false } : x));
+            const choice = await requestConflictResolution({
+              type: 'item',
+              item: item,
+              existingName: checkRes.data.existingName,
+              existingId: checkRes.data.existingId,
+              bulkIndex: i + 1,
+              bulkTotal: total,
+            });
+            if (choice === 'overwrite') {
+              overwritten++;
+            } else {
+              skipped++;
+            }
+          } else {
+            const res = await actions.saveMagicItem({
+              campaignId,
+              name: item.name,
+              type: item.type || 'Oggetto Meraviglioso',
+              rarity: item.rarity || 'Comune',
+              attunement: item.attunement || 'No',
+              description: item.description,
+              cost: item.cost || '',
+              damage: item.damage || '',
+              imageUrl: item.imageUrl || null,
+              techType: 'alchemy'
+            });
+            if (res.success) {
+              saved++;
+              setMagicItems(prev => prev.map(x => x.id === item.id ? { ...x, savedCampaign: true, savedGlobal: true, isSaving: false } : x));
+            } else {
+              errors++;
+              setMagicItems(prev => prev.map(x => x.id === item.id ? { ...x, isSaving: false } : x));
+            }
+          }
+        } else if (currentItem.category === 'spell') {
+          const s = currentItem.item;
+          setSpells(prev => prev.map(x => x.id === s.id ? { ...x, isSaving: true } : x));
+          const checkRes = await actions.checkIfSpellExists(s.name, campaignId);
+          if (checkRes.success && checkRes.data?.conflict) {
+            setSavingAllProgress(prev => prev ? { ...prev, isPausedForConflict: true } : null);
+            setSpells(prev => prev.map(x => x.id === s.id ? { ...x, isSaving: false } : x));
+            const choice = await requestConflictResolution({
+              type: 'spell',
+              item: s,
+              existingName: checkRes.data.existingName,
+              existingId: checkRes.data.existingId,
+              bulkIndex: i + 1,
+              bulkTotal: total,
+            });
+            if (choice === 'overwrite') {
+              overwritten++;
+            } else {
+              skipped++;
+            }
+          } else {
+            const res = await actions.saveSpell({
+              campaignId,
+              name: s.name,
+              level: s.level,
+              school: s.school,
+              casting_time: s.casting_time,
+              range: s.range,
+              components: s.components,
+              duration: s.duration,
+              classes: s.classes,
+              description: s.description
+            });
+            if (res.success) {
+              saved++;
+              setSpells(prev => prev.map(x => x.id === s.id ? { ...x, savedCampaign: true, savedGlobal: true, isSaving: false } : x));
+            } else {
+              errors++;
+              setSpells(prev => prev.map(x => x.id === s.id ? { ...x, isSaving: false } : x));
+            }
+          }
+        } else if (currentItem.category === 'skill') {
+          const sk = currentItem.item;
+          setSkills(prev => prev.map(x => x.id === sk.id ? { ...x, isSaving: true } : x));
+          const checkRes = await actions.checkIfSkillExists(sk.name, campaignId);
+          if (checkRes.success && checkRes.data?.conflict) {
+            setSavingAllProgress(prev => prev ? { ...prev, isPausedForConflict: true } : null);
+            setSkills(prev => prev.map(x => x.id === sk.id ? { ...x, isSaving: false } : x));
+            const choice = await requestConflictResolution({
+              type: 'skill',
+              item: sk,
+              existingName: checkRes.data.existingName,
+              existingId: checkRes.data.existingId,
+              bulkIndex: i + 1,
+              bulkTotal: total,
+            });
+            if (choice === 'overwrite') {
+              overwritten++;
+            } else {
+              skipped++;
+            }
+          } else {
+            const res = await actions.saveSkill({
+              campaignId,
+              name: sk.name,
+              ability: sk.ability || sk.type || 'Varia',
+              description: sk.description
+            });
+            if (res.success) {
+              saved++;
+              setSkills(prev => prev.map(x => x.id === sk.id ? { ...x, savedCampaign: true, savedGlobal: true, isSaving: false } : x));
+            } else {
+              errors++;
+              setSkills(prev => prev.map(x => x.id === sk.id ? { ...x, isSaving: false } : x));
+            }
+          }
+        } else if (currentItem.category === 'rule') {
+          const r = currentItem.item;
+          setRules(prev => prev.map(x => x.id === r.id ? { ...x, isSaving: true } : x));
+          const res = await actions.saveHomebrewRule({
+            campaignId,
+            title: r.title,
+            content: r.content,
+            category: r.chapterTitle || 'Regole',
+            isActive: true
+          });
+          if (res.success) {
+            saved++;
+            setRules(prev => prev.map(x => x.id === r.id ? { ...r, savedCampaign: true, isSaving: false } : r));
+          } else {
+            errors++;
+            setRules(prev => prev.map(x => x.id === r.id ? { ...x, isSaving: false } : x));
+          }
+        }
+      } catch (err: any) {
+        errors++;
+      }
+
+      setSavingAllProgress(prev => prev ? {
+        ...prev,
+        saved,
+        overwritten,
+        skipped,
+        errors,
+      } : null);
+    }
+
+    setSavingAllProgress(prev => prev ? {
+      ...prev,
+      isActive: false,
+      isPausedForConflict: false,
+    } : null);
+
     triggerGlobalSync();
     toast({
-      title: "Salvataggio Completato",
-      description: `Salvati ${savedCount} elementi con successo nel database!`
+      title: "Salvataggio Terminato!",
+      description: `Riepilogo: ${saved} salvati, ${overwritten} sovrascritti, ${skipped} saltati.${errors > 0 ? ` (${errors} errori)` : ''}`
     });
   };
 
@@ -2941,6 +3430,90 @@ export function ContentImporterNew({ campaignId }: ContentImporterNewProps) {
 
       {/* Sezione Risultati Estratti */}
       <div ref={resultsRef} className="space-y-4 pt-2 scroll-mt-6">
+        {/* Avanzamento Visivo in Tempo Reale Salvataggio in Blocco */}
+        {savingAllProgress && (
+          <Card className="border-primary/50 bg-card/95 shadow-xl backdrop-blur-md overflow-hidden animate-in fade-in slide-in-from-top-2 duration-200 border-2">
+            <div className="bg-primary/10 border-b border-primary/20 p-3.5 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+              <div className="flex items-center gap-3">
+                <div className="p-2 rounded-lg bg-primary/20 text-primary border border-primary/30 shrink-0">
+                  {savingAllProgress.isActive ? (
+                    <RefreshCw className="h-5 w-5 animate-spin text-primary" />
+                  ) : (
+                    <CheckCircle2 className="h-5 w-5 text-emerald-400" />
+                  )}
+                </div>
+                <div>
+                  <h4 className="font-bold text-sm text-foreground flex items-center gap-2 flex-wrap">
+                    <span>
+                      {savingAllProgress.isActive
+                        ? (savingAllProgress.isPausedForConflict
+                            ? `In attesa di decisione sul duplicato (${savingAllProgress.current}/${savingAllProgress.total})`
+                            : "Salvataggio in corso nel database...")
+                        : "Salvataggio in Blocco Terminato!"}
+                    </span>
+                    <span className="text-xs font-mono font-bold px-2 py-0.5 rounded-full bg-primary/20 text-primary border border-primary/30">
+                      {savingAllProgress.current} di {savingAllProgress.total} ({Math.round((savingAllProgress.current / Math.max(1, savingAllProgress.total)) * 100)}%)
+                    </span>
+                  </h4>
+                  <p className="text-xs text-muted-foreground truncate max-w-md mt-0.5">
+                    {savingAllProgress.isActive ? (
+                      <>
+                        Elemento corrente: <strong className="text-foreground">{savingAllProgress.currentName}</strong> ({savingAllProgress.category})
+                      </>
+                    ) : (
+                      "Tutti gli elementi selezionati sono stati salvati o gestiti secondo le tue scelte."
+                    )}
+                  </p>
+                </div>
+              </div>
+              <div className="flex items-center gap-2 flex-wrap self-end sm:self-auto">
+                <div className="flex items-center gap-1.5 text-xs font-mono">
+                  <Badge variant="outline" className="bg-emerald-950/40 text-emerald-300 border-emerald-800/40 text-[11px]">
+                    ✓ Salvati: <strong className="ml-1 text-emerald-200">{savingAllProgress.saved}</strong>
+                  </Badge>
+                  <Badge variant="outline" className="bg-amber-950/40 text-amber-300 border-amber-800/40 text-[11px]">
+                    ↻ Sovrascritti: <strong className="ml-1 text-amber-200">{savingAllProgress.overwritten}</strong>
+                  </Badge>
+                  <Badge variant="outline" className="bg-slate-900/60 text-slate-300 border-slate-700/60 text-[11px]">
+                    ↷ Saltati: <strong className="ml-1 text-slate-200">{savingAllProgress.skipped}</strong>
+                  </Badge>
+                </div>
+                {savingAllProgress.isActive ? (
+                  <Button
+                    size="sm"
+                    variant="destructive"
+                    className="h-7 text-xs px-2.5 ml-1 font-bold"
+                    onClick={handleStopSaveAll}
+                  >
+                    <X className="h-3.5 w-3.5 mr-1" /> Ferma
+                  </Button>
+                ) : (
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    className="h-7 text-xs px-3 ml-1 border-primary/40 text-primary hover:bg-primary/10 font-bold"
+                    onClick={() => setSavingAllProgress(null)}
+                  >
+                    Chiudi
+                  </Button>
+                )}
+              </div>
+            </div>
+            <div className="p-3 bg-background/50 space-y-1.5">
+              <div className="flex justify-between text-[11px] text-muted-foreground font-mono">
+                <span>Avanzamento processo</span>
+                <span className="font-bold text-foreground">
+                  {Math.round((savingAllProgress.current / Math.max(1, savingAllProgress.total)) * 100)}%
+                </span>
+              </div>
+              <Progress
+                value={Math.round((savingAllProgress.current / Math.max(1, savingAllProgress.total)) * 100)}
+                className="h-2.5 bg-muted"
+              />
+            </div>
+          </Card>
+        )}
+
         {totalResultsCount > 0 && (
           <div className="space-y-4">
             {/* Barra Schede & Azioni in Blocco */}
@@ -4337,18 +4910,51 @@ export function ContentImporterNew({ campaignId }: ContentImporterNewProps) {
           }}
         />
       )}
-        <Dialog open={!!duplicateDialog} onOpenChange={(open) => !open && setDuplicateDialog(null)}>
-          <DialogContent>
+        <Dialog 
+          open={!!duplicateDialog} 
+          onOpenChange={(open) => {
+            if (!open) {
+              handleSkipDuplicate();
+            }
+          }}
+        >
+          <DialogContent className="max-w-md">
             <DialogHeader>
-              <DialogTitle>Mostro Duplicato Rilevato</DialogTitle>
-              <DialogDescription>
-                Il mostro "{duplicateDialog?.existingName}" esiste già nel Bestiario.
-                Vuoi sovrascriverlo con i nuovi dati? Questa operazione non può essere annullata.
+              <DialogTitle className="flex items-center gap-2 text-amber-500 font-bold">
+                <AlertCircle className="h-5 w-5 text-amber-500 shrink-0" />
+                <span>Elemento Duplicato Rilevato</span>
+              </DialogTitle>
+              <DialogDescription asChild>
+                <div className="text-sm pt-2 space-y-2.5 text-foreground/90">
+                  <p>
+                    L'elemento <strong className="text-amber-400 font-semibold">"{duplicateDialog?.existingName}"</strong> esiste già nel database della campagna o nel compendio.
+                  </p>
+                  {duplicateDialog?.bulkTotal && (
+                    <div className="text-xs bg-amber-950/40 border border-amber-800/50 p-2.5 rounded-lg text-amber-200">
+                      Elemento <strong>{duplicateDialog.bulkIndex} di {duplicateDialog.bulkTotal}</strong> nel salvataggio in blocco. Scegli cosa fare per questa scheda: una volta scelta l'opzione, il salvataggio proseguirà subito con l'elemento successivo.
+                    </div>
+                  )}
+                  <p className="text-xs text-muted-foreground">
+                    Scegli come procedere per questo singolo elemento:
+                  </p>
+                </div>
               </DialogDescription>
             </DialogHeader>
-            <DialogFooter>
-              <Button variant="outline" onClick={() => setDuplicateDialog(null)}>Annulla</Button>
-              <Button variant="destructive" onClick={handleConfirmOverwrite}>Sovrascrivi</Button>
+            <DialogFooter className="flex flex-col sm:flex-row gap-2 pt-3">
+              <Button 
+                variant="outline" 
+                onClick={handleSkipDuplicate}
+                className="w-full sm:w-auto text-xs font-semibold"
+              >
+                Salta (Mantieni originale)
+              </Button>
+              <Button 
+                variant="destructive" 
+                onClick={handleConfirmOverwrite}
+                className="w-full sm:w-auto text-xs bg-amber-600 hover:bg-amber-700 text-white font-bold"
+              >
+                Sovrascrivi questa scheda
+              </Button>
             </DialogFooter>
           </DialogContent>
         </Dialog>

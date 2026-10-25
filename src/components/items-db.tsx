@@ -307,13 +307,20 @@ export function ItemsDb({ magicItems, campaignId, possessedItems, onSaveItem, on
     let items = [...magicItems];
 
     if (search) {
-      const lowerCaseSearch = search.toLowerCase();
-      items = items.filter(item =>
-        item.name.toLowerCase().includes(lowerCaseSearch) ||
-        (item.type?.toLowerCase() ?? '').includes(lowerCaseSearch) ||
-        (item.rarity?.toLowerCase() ?? '').includes(lowerCaseSearch) ||
-        (item.description?.toLowerCase() ?? '').includes(lowerCaseSearch)
-      );
+      const lowerCaseSearch = search.toLowerCase().trim();
+      const normSearch = lowerCaseSearch.replace(/^[^:]+:\s*/, '');
+      items = items.filter(item => {
+        const nameLow = item.name.toLowerCase();
+        const baseNameLow = nameLow.replace(/^[^:]+:\s*/, '');
+        return (
+          nameLow.includes(lowerCaseSearch) ||
+          baseNameLow.includes(lowerCaseSearch) ||
+          baseNameLow.includes(normSearch) ||
+          (item.type?.toLowerCase() ?? '').includes(lowerCaseSearch) ||
+          (item.rarity?.toLowerCase() ?? '').includes(lowerCaseSearch) ||
+          (item.description?.toLowerCase() ?? '').includes(lowerCaseSearch)
+        );
+      });
     }
     
     if (showPossessed) {

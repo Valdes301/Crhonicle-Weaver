@@ -435,6 +435,9 @@ export function MonstersDb({ monsters, campaignId, possessedItems, onSave, onDel
   const [selectedChallenges, setSelectedChallenges] = useState<string[]>([]);
   const [sortBy, setSortBy] = useState<'name-asc' | 'name-desc' | 'challenge-asc' | 'challenge-desc'>('name-asc');
   const [lightboxImage, setLightboxImage] = useState<string | null>(null);
+  const [isTypeFilterOpen, setIsTypeFilterOpen] = useState(false);
+  const [isGsFilterOpen, setIsGsFilterOpen] = useState(false);
+  const [mountedTime] = useState(() => Date.now());
 
   // Estrai tipi e gradi di sfida unici dai mostri presenti
   const allTypes = useMemo(() => {
@@ -491,13 +494,20 @@ export function MonstersDb({ monsters, campaignId, possessedItems, onSave, onDel
     }
 
     if (monsterSearch) {
-      const lowerCaseSearch = monsterSearch.toLowerCase();
-      items = items.filter(monster =>
-        monster.name.toLowerCase().includes(lowerCaseSearch) ||
-        (monster.type?.toLowerCase() ?? '').includes(lowerCaseSearch) ||
-        (monster.challenge?.toLowerCase() ?? '').includes(lowerCaseSearch) ||
-        (monster.description?.toLowerCase() ?? '').includes(lowerCaseSearch)
-      );
+      const lowerCaseSearch = monsterSearch.toLowerCase().trim();
+      const normSearch = lowerCaseSearch.replace(/^[^:]+:\s*/, '');
+      items = items.filter(monster => {
+        const nameLow = monster.name.toLowerCase();
+        const baseNameLow = nameLow.replace(/^[^:]+:\s*/, '');
+        return (
+          nameLow.includes(lowerCaseSearch) ||
+          baseNameLow.includes(lowerCaseSearch) ||
+          baseNameLow.includes(normSearch) ||
+          (monster.type?.toLowerCase() ?? '').includes(lowerCaseSearch) ||
+          (monster.challenge?.toLowerCase() ?? '').includes(lowerCaseSearch) ||
+          (monster.description?.toLowerCase() ?? '').includes(lowerCaseSearch)
+        );
+      });
     }
 
     items.sort((a, b) => {
@@ -546,9 +556,26 @@ export function MonstersDb({ monsters, campaignId, possessedItems, onSave, onDel
         </div>
         <div className="flex flex-wrap items-center justify-between gap-4 pt-4 mt-2 border-t">
           <div className="flex flex-wrap items-center gap-2">
-            <DropdownMenu>
+            <DropdownMenu 
+              open={isTypeFilterOpen} 
+              onOpenChange={(open) => {
+                if (open && Date.now() - mountedTime < 350) return;
+                setIsTypeFilterOpen(open);
+              }}
+            >
               <DropdownMenuTrigger asChild>
-                <Button variant="outline" size="sm" className="text-[10px] uppercase font-bold">
+                <Button 
+                  type="button"
+                  variant="outline" 
+                  size="sm" 
+                  className="text-[10px] uppercase font-bold"
+                  onClick={(e) => {
+                    if (Date.now() - mountedTime < 350) {
+                      e.preventDefault();
+                      e.stopPropagation();
+                    }
+                  }}
+                >
                   <Filter className="mr-2 h-3.5 w-3.5" /> Tipo
                   {selectedTypes.length > 0 && <Badge variant="secondary" className="ml-2 h-4 px-1">{selectedTypes.length}</Badge>}
                 </Button>
@@ -570,9 +597,26 @@ export function MonstersDb({ monsters, campaignId, possessedItems, onSave, onDel
               </DropdownMenuContent>
             </DropdownMenu>
 
-            <DropdownMenu>
+            <DropdownMenu 
+              open={isGsFilterOpen} 
+              onOpenChange={(open) => {
+                if (open && Date.now() - mountedTime < 350) return;
+                setIsGsFilterOpen(open);
+              }}
+            >
               <DropdownMenuTrigger asChild>
-                <Button variant="outline" size="sm" className="text-[10px] uppercase font-bold">
+                <Button 
+                  type="button"
+                  variant="outline" 
+                  size="sm" 
+                  className="text-[10px] uppercase font-bold"
+                  onClick={(e) => {
+                    if (Date.now() - mountedTime < 350) {
+                      e.preventDefault();
+                      e.stopPropagation();
+                    }
+                  }}
+                >
                   <Filter className="mr-2 h-3.5 w-3.5" /> Grado di Sfida (GS)
                   {selectedChallenges.length > 0 && <Badge variant="secondary" className="ml-2 h-4 px-1">{selectedChallenges.length}</Badge>}
                 </Button>
