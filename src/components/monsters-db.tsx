@@ -600,7 +600,7 @@ export function MonstersDb({ monsters, campaignId, possessedItems, onSave, onDel
             <DropdownMenu 
               open={isGsFilterOpen} 
               onOpenChange={(open) => {
-                if (open && Date.now() - mountedTime < 350) return;
+                if (open && Date.now() - mountedTime < 1000) return;
                 setIsGsFilterOpen(open);
               }}
             >
@@ -611,7 +611,7 @@ export function MonstersDb({ monsters, campaignId, possessedItems, onSave, onDel
                   size="sm" 
                   className="text-[10px] uppercase font-bold"
                   onClick={(e) => {
-                    if (Date.now() - mountedTime < 350) {
+                    if (Date.now() - mountedTime < 1000) {
                       e.preventDefault();
                       e.stopPropagation();
                     }

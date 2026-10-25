@@ -525,6 +525,28 @@ export async function saveAiModelConfigAction(modelName: string) {
     }
 }
 
+
+export async function setAppSettingAction(key: string, value: string) {
+    'use server';
+    try {
+        setAppSetting(key, value);
+        return actionResponse({ success: true });
+    } catch (e: any) {
+        return actionResponse(null, e.message);
+    }
+}
+
+export async function getAppSettingAction(key: string, defaultValue: string = '') {
+    'use server';
+    try {
+        return actionResponse(getAppSetting(key, defaultValue));
+    } catch (e: any) {
+        return actionResponse(null, e.message);
+    }
+}
+
+
+
 export async function addCustomAiModelAction(modelId: string, label?: string, description?: string) {
     'use server';
     try {

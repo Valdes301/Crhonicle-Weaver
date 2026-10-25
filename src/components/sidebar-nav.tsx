@@ -1,6 +1,7 @@
 'use client';
 
 import { useState, useEffect, memo } from 'react';
+import * as actions from '@/lib/actions';
 import {
   Sidebar,
   SidebarContent,
@@ -102,8 +103,15 @@ const supportItems = [
 ];
 
 export const SidebarNav = memo(function SidebarNav({ activeView, onViewChange, onNewCampaign, onBackup, onOpenPinConfig, dbSettings }: SidebarNavProps) {
-  const { isMobile, setOpenMobile, toggleSidebar } = useSidebar();
+  const { isMobile, setOpenMobile, toggleSidebar, open, setOpen, openMobile } = useSidebar();
   const [isClient, setIsClient] = useState(false);
+  const [autoCloseEnabled, setAutoCloseEnabled] = useState<boolean>(() => {
+    if (typeof window !== 'undefined') {
+      const stored = localStorage.getItem('dnd_auto_close_sidebar');
+      if (stored !== null) return stored === 'true';
+    }
+    return true;
+  });
 
   // Inizializzazione sincrona dello stato di sicurezza basata sia sui dati DB sia su localStorage
   const initialHasPin = Boolean(dbSettings?.master_pin_hash);
@@ -133,6 +141,14 @@ export const SidebarNav = memo(function SidebarNav({ activeView, onViewChange, o
 
   useEffect(() => {
     setIsClient(true);
+    actions.getAppSettingAction('autoCloseSidebar', 'true').then(res => {
+      if (res.success && res.data) {
+        const val = res.data !== 'false';
+        setAutoCloseEnabled(val);
+        localStorage.setItem('dnd_auto_close_sidebar', val ? 'true' : 'false');
+      }
+    });
+
     if (dbSettings) {
       syncFromDatabase(dbSettings);
     }
@@ -156,12 +172,20 @@ export const SidebarNav = memo(function SidebarNav({ activeView, onViewChange, o
       setHasPin(isPinConfigured() || Boolean(dbSettings?.master_pin_hash));
       setBlockedViewsState(getBlockedViews());
     };
+    const handleSettingChange = (e: any) => {
+      if (e.detail?.key === 'autoCloseSidebar') {
+        const val = e.detail?.value !== 'false';
+        setAutoCloseEnabled(val);
+        localStorage.setItem('dnd_auto_close_sidebar', val ? 'true' : 'false');
+      }
+    };
 
     window.addEventListener('dnd-player-mode-changed', handlePlayerModeChange);
     window.addEventListener('dnd-blocked-views-changed', handleBlockedViewsChange);
     window.addEventListener('dnd-blocked-behavior-changed', handleBehaviorChange);
     window.addEventListener('dnd-pin-changed', handlePinChange);
     window.addEventListener('dnd-pin-config-changed', handlePinChange);
+    window.addEventListener('dnd-setting-changed', handleSettingChange);
 
     return () => {
       window.removeEventListener('dnd-player-mode-changed', handlePlayerModeChange);
@@ -169,18 +193,56 @@ export const SidebarNav = memo(function SidebarNav({ activeView, onViewChange, o
       window.removeEventListener('dnd-blocked-behavior-changed', handleBehaviorChange);
       window.removeEventListener('dnd-pin-changed', handlePinChange);
       window.removeEventListener('dnd-pin-config-changed', handlePinChange);
+      window.removeEventListener('dnd-setting-changed', handleSettingChange);
     };
   }, [dbSettings]);
 
+  // Gestione chiusura automatica al click/tocco su qualsiasi punto esterno alla sidebar
+  useEffect(() => {
+    if (!autoCloseEnabled) return;
+    if (!open && !openMobile) return;
+
+    const handleOutsideClick = (e: MouseEvent | TouchEvent) => {
+      const target = e.target as HTMLElement | null;
+      if (!target) return;
+
+      // Se il click è all'interno della sidebar, non chiudere
+      const sidebarEl = document.querySelector('[data-sidebar="sidebar"]');
+      if (sidebarEl && sidebarEl.contains(target)) return;
+
+      // Se il click è su un pulsante di apertura/chiusura menu, non interferire
+      const triggerEl = target.closest('[data-sidebar="trigger"], [aria-label*="Menu"], [aria-label*="Navigazione"], #sidebar-toggle-btn');
+      if (triggerEl) return;
+
+      // Tocco/click sulla pagina: chiudi la sidebar
+      if (openMobile) {
+        setOpenMobile(false);
+      }
+      if (open) {
+        setOpen(false);
+      }
+    };
+
+    document.addEventListener('click', handleOutsideClick, true);
+    document.addEventListener('touchend', handleOutsideClick, true);
+
+    return () => {
+      document.removeEventListener('click', handleOutsideClick, true);
+      document.removeEventListener('touchend', handleOutsideClick, true);
+    };
+  }, [autoCloseEnabled, isMobile, open, openMobile, setOpen, setOpenMobile]);
+
   const handleViewChange = (view: string) => {
     if (view === 'bacheca') {
-        onViewChange(null);
+      onViewChange(null);
     } else {
-        onViewChange(view);
+      onViewChange(view);
     }
     
     if (isMobile) {
       setOpenMobile(false);
+    } else if (autoCloseEnabled) {
+      setOpen(false);
     }
   };
 
@@ -272,7 +334,7 @@ export const SidebarNav = memo(function SidebarNav({ activeView, onViewChange, o
   const hasVisibleSupportItems = supportItems.some(i => isItemVisible(i.id));
   
   return (
-    <Sidebar collapsible="icon">
+    <Sidebar collapsible="offcanvas" style={{ "--sidebar-width": "13rem" } as React.CSSProperties}>
       <SidebarHeader>
         <SidebarMenu>
             <SidebarMenuItem>

@@ -490,12 +490,14 @@ function ManagerContent(props: CampaignManagerProps & { initialView?: string; on
             <main className="w-full p-0 relative z-0">
                 {(overlayView && overlayView !== 'bacheca') && (
                     <header className="flex flex-col items-center justify-center text-center gap-2 border-b pb-6 mb-8 relative group w-full px-4 sm:px-6 lg:px-8 pt-6">
-                        {/* Su Smartphone / Mobile: Isola dei dadi in alto a sinistra e bottoni disposti in colonna verticale con lo stesso stile */}
-                        <div className="md:hidden absolute left-0 top-0 flex flex-col items-center gap-1 z-10">
+                        {/* Isola dei comandi in alto a sinistra per aprire/chiudere la sidebar su Mobile, Tablet e PC */}
+                        <div className="absolute left-0 top-0 flex flex-col md:flex-row items-center gap-1 z-20">
                             <Button 
                                 type="button"
                                 variant="ghost" 
                                 size="icon" 
+                                id="sidebar-toggle-btn"
+                                data-sidebar="trigger"
                                 onClick={(e) => {
                                   e.stopPropagation();
                                   toggleSidebar();
@@ -506,8 +508,10 @@ function ManagerContent(props: CampaignManagerProps & { initialView?: string; on
                             >
                                 <Icons.logo className="h-6 w-6 pointer-events-none" />
                             </Button>
-                            <PlayerModeToggle variant="ghost" iconOnly />
-                            <QuickLockButton variant="ghost" onOpenConfig={onOpenPinConfig} />
+                            <div className="flex md:hidden flex-col items-center gap-1">
+                                <PlayerModeToggle variant="ghost" iconOnly />
+                                <QuickLockButton variant="ghost" onOpenConfig={onOpenPinConfig} />
+                            </div>
                         </div>
 
                         {/* Su Tablet e Desktop (md+): Badge posizionati in alto a destra */}

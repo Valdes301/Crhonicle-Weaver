@@ -4,7 +4,9 @@
 import { useState, useEffect } from 'react';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
-import { CheckCircle2, XCircle, ShieldCheck, Key, RefreshCw, Loader2, AlertTriangle, ShieldAlert, Trash2, AlertCircle, BarChart3, Activity, Zap, History, FolderOpen, Image as ImageIcon, FileText, Link2, Sparkles, Wand2, BookOpen, Check, Upload, FileUp, Lock, Database } from 'lucide-react';
+import { CheckCircle2, XCircle, ShieldCheck, Key, RefreshCw, Loader2, AlertTriangle, ShieldAlert, Trash2, AlertCircle, BarChart3, Activity, Zap, History, FolderOpen, Image as ImageIcon, FileText, Link2, Sparkles, Wand2, BookOpen, Check, Upload, FileUp, Lock, Database, PanelLeft } from 'lucide-react';
+import { Switch } from '@/components/ui/switch';
+import { Label } from '@/components/ui/label';
 import * as actions from '@/lib/actions';
 import { Badge } from './ui/badge';
 import { useToast } from '@/hooks/use-toast';
@@ -63,6 +65,14 @@ export function SettingsView({ campaignId }: { campaignId: string }) {
         spaceSaved: number;
         optimizedAt: string;
     } | null>(null);
+    const [autoCloseSidebar, setAutoCloseSidebar] = useState<boolean>(() => {
+        if (typeof window !== 'undefined') {
+            const stored = localStorage.getItem('dnd_auto_close_sidebar');
+            if (stored !== null) return stored === 'true';
+        }
+        return true;
+    });
+
 
     const handleTestService = async (serviceName: string) => {
         setTestingService(serviceName);
@@ -318,9 +328,19 @@ export function SettingsView({ campaignId }: { campaignId: string }) {
             setPlayerMode(isPlayerMode());
         };
         checkPin();
+        const fetchAutoClose = async () => {
+            const res = await actions.getAppSettingAction('autoCloseSidebar', 'true');
+            if (res.success && res.data) {
+                const val = res.data !== 'false';
+                setAutoCloseSidebar(val);
+                localStorage.setItem('dnd_auto_close_sidebar', val ? 'true' : 'false');
+            }
+        };
+        fetchAutoClose();
         const handlePlayerModeChange = (e: any) => {
             setPlayerMode(Boolean(e.detail?.isPlayerMode));
         };
+
         window.addEventListener('dnd-pin-config-changed', checkPin);
         window.addEventListener('dnd-player-mode-changed', handlePlayerModeChange);
         return () => {
@@ -546,6 +566,40 @@ export function SettingsView({ campaignId }: { campaignId: string }) {
                                 </div>
                             </div>
                         )}
+                    </CardContent>
+                </Card>
+            </div>
+
+            {/* INTERFACCIA */}
+            <div className="space-y-4">
+                <h3 className="font-headline text-xl uppercase tracking-widest flex items-center gap-2">
+                    <PanelLeft className="h-5 w-5 text-primary" /> Interfaccia
+                </h3>
+                <Card className="border-primary/20 bg-muted/5">
+                    <CardHeader className="p-4">
+                        <CardTitle className="text-sm uppercase tracking-wider flex items-center gap-2">
+                            <PanelLeft className="h-4 w-4 text-primary" /> Sidebar
+                        </CardTitle>
+                        <CardDescription className="text-xs mt-1">
+                            Configura il comportamento della barra di navigazione.
+                        </CardDescription>
+                    </CardHeader>
+                    <CardContent className="p-4 pt-0">
+                        <div className="flex items-center justify-between space-x-2">
+                            <Label htmlFor="auto-close-sidebar" className="text-sm">Chiusura automatica sidebar al click fuori</Label>
+                            <Switch
+                                id="auto-close-sidebar"
+                                checked={autoCloseSidebar}
+                                onCheckedChange={(checked) => {
+                                    setAutoCloseSidebar(checked);
+                                    localStorage.setItem('dnd_auto_close_sidebar', checked.toString());
+                                    actions.setAppSettingAction('autoCloseSidebar', checked.toString());
+                                    window.dispatchEvent(new CustomEvent('dnd-setting-changed', {
+                                        detail: { key: 'autoCloseSidebar', value: checked.toString() }
+                                    }));
+                                }}
+                            />
+                        </div>
                     </CardContent>
                 </Card>
             </div>

@@ -1,10 +1,12 @@
 'use client';
 
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import type { CampaignWithRelations } from '@/lib/types';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
+import { Switch } from '@/components/ui/switch';
+import { Label } from '@/components/ui/label';
 import {
   AlertDialog,
   AlertDialogAction,
@@ -35,7 +37,8 @@ import {
   Copy,
   Check,
   Terminal,
-  Loader2
+  Loader2,
+  PanelLeft
 } from 'lucide-react';
 import { SettingsView } from './settings-view';
 import { HomebrewCompendium } from './homebrew-compendium';
@@ -67,6 +70,33 @@ export function SystemPanel({
   const [isMigrating, setIsMigrating] = useState<boolean>(false);
   const [copiedLogs, setCopiedLogs] = useState<boolean>(false);
   const { toast } = useToast();
+  const [autoCloseSidebar, setAutoCloseSidebar] = useState<boolean>(() => {
+    if (typeof window !== 'undefined') {
+      const stored = localStorage.getItem('dnd_auto_close_sidebar');
+      if (stored !== null) return stored === 'true';
+    }
+    return true;
+  });
+
+  useEffect(() => {
+    actions.getAppSettingAction('autoCloseSidebar', 'true').then(res => {
+      if (res.success && res.data) {
+        const val = res.data !== 'false';
+        setAutoCloseSidebar(val);
+        localStorage.setItem('dnd_auto_close_sidebar', val ? 'true' : 'false');
+      }
+    });
+
+    const handleSettingChange = (e: any) => {
+      if (e.detail?.key === 'autoCloseSidebar') {
+        const val = e.detail?.value !== 'false';
+        setAutoCloseSidebar(val);
+        localStorage.setItem('dnd_auto_close_sidebar', val ? 'true' : 'false');
+      }
+    };
+    window.addEventListener('dnd-setting-changed', handleSettingChange);
+    return () => window.removeEventListener('dnd-setting-changed', handleSettingChange);
+  }, []);
 
   const handleQuickLock = () => {
     if (isPinConfigured()) {
@@ -150,6 +180,54 @@ export function SystemPanel({
         {/* Scheda 1: Controlli, Sicurezza e Backup */}
         <TabsContent value="control" className="space-y-6 mt-0">
           
+          {/* Sezione Interfaccia & Navigazione */}
+          <div className="space-y-3">
+            <div className="flex items-center gap-2 text-sm font-semibold text-primary uppercase tracking-wider">
+              <PanelLeft className="h-4 w-4 text-primary" /> Interfaccia &amp; Navigazione Sidebar
+            </div>
+            <Card className="bg-card/75 backdrop-blur-md border border-border/80 hover:border-border transition-all">
+              <CardHeader className="p-4 pb-2">
+                <CardTitle className="text-base flex items-center gap-2 text-foreground font-headline">
+                  <PanelLeft className="h-5 w-5 text-primary" />
+                  Comportamento Sidebar su PC, Tablet e Smartphone
+                </CardTitle>
+                <CardDescription className="text-xs">
+                  Regola la chiusura automatica e l'adattamento dello schermo: quando attiva, toccando o cliccando in qualsiasi punto fuori dalla barra questa si chiude subito lasciando le pagine libere.
+                </CardDescription>
+              </CardHeader>
+              <CardContent className="p-4 pt-2">
+                <div className="flex items-center justify-between p-3 rounded-lg bg-stone-900/60 border border-stone-800">
+                  <div className="space-y-0.5 pr-4">
+                    <Label htmlFor="system-control-auto-close-sidebar" className="text-sm font-medium text-foreground cursor-pointer">
+                      Chiusura automatica sidebar al tocco/click fuori
+                    </Label>
+                    <p className="text-xs text-muted-foreground">
+                      {autoCloseSidebar ? "Attiva: toccando un punto della pagina, la sidebar si chiude automaticamente." : "Disattivata: la sidebar rimane aperta finché non usi il pulsante di chiusura."}
+                    </p>
+                  </div>
+                  <Switch
+                    id="system-control-auto-close-sidebar"
+                    checked={autoCloseSidebar}
+                    onCheckedChange={(checked) => {
+                      setAutoCloseSidebar(checked);
+                      localStorage.setItem('dnd_auto_close_sidebar', checked.toString());
+                      actions.setAppSettingAction('autoCloseSidebar', checked.toString());
+                      window.dispatchEvent(new CustomEvent('dnd-setting-changed', {
+                        detail: { key: 'autoCloseSidebar', value: checked.toString() }
+                      }));
+                      toast({ 
+                        title: checked ? "Chiusura Automatica Attivata" : "Chiusura Automatica Disattivata",
+                        description: checked 
+                          ? "La sidebar si chiuderà toccando qualsiasi punto della pagina." 
+                          : "La sidebar rimarrà aperta fino alla chiusura manuale."
+                      });
+                    }}
+                  />
+                </div>
+              </CardContent>
+            </Card>
+          </div>
+
           {/* Sezione Selezione Modello IA */}
           <div className="space-y-3">
             <div className="flex items-center gap-2 text-sm font-semibold text-primary uppercase tracking-wider">

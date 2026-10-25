@@ -1,6 +1,6 @@
 {
   "name": "11_Remix dnd-chronicle-weaver",
-  "description": "",
+  "description": "Assistente e Compendio per D&D 5e con gestione campagne, sessioni, schede e regole.",
   "requestFramePermissions": [],
   "majorCapabilities": [
     "MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"
