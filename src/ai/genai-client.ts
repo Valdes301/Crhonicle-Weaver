@@ -153,18 +153,20 @@ export async function safeGenerateContent(
   }
 
   const activeModel = getActiveFlashModel(serviceName);
-  
-  // Whitelist modelli ufficiali per la SDK
-  const allowedModels = ['gemini-2.5-flash', 'gemini-2.5-pro'];
   const rawRequested = sanitizeModelName(params.model || activeModel);
-  const requestedModel = (rawRequested.includes('3.8') || rawRequested.includes('3.5') || rawRequested.includes('latest'))
-    ? 'gemini-2.5-flash'
-    : rawRequested;
-  const primaryModel = allowedModels.includes(requestedModel) 
-    ? requestedModel 
-    : 'gemini-2.5-flash';
+  const primaryModel = rawRequested || 'gemini-3.8-flash';
   
-  const modelsToTry = [primaryModel, ...allowedModels.filter(m => m !== primaryModel)];
+  // Modelli di fallback in ordine di priorità se il modello principale fallisce
+  const fallbackModels = [
+    'gemini-3.8-flash',
+    'gemini-3.7-flash',
+    'gemini-3.6-flash',
+    'gemini-3.5-flash',
+    'gemini-3.1-flash-lite',
+    'gemini-2.5-flash'
+  ];
+  
+  const modelsToTry = Array.from(new Set([primaryModel, ...fallbackModels]));
   const apiKeys = getAllValidGeminiApiKeys();
 
   let lastError: any = null;

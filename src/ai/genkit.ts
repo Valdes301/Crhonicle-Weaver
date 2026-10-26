@@ -46,7 +46,7 @@ export const getValidKey = (specificKeyEnv?: string): string | undefined => {
  * Risolve dinamicamente il modello configurato dall'utente per Genkit.
  */
 export const getActiveGenkitModel = (serviceName?: string): string => {
-  let modelName = 'gemini-2.5-flash';
+  let modelName = 'gemini-3.8-flash';
   if (serviceName) {
     try {
       const sectionSaved = getAppSetting(`model_service_${serviceName}`);
@@ -133,7 +133,7 @@ export class GenkitAdapter {
       const apiKey = getValidKey(self.envVar);
       const ai = new GoogleGenAI({ apiKey });
       let rawModel = self.options?.model || getActiveGenkitModel(self.serviceName);
-      const model = rawModel.replace(/^googleai\//, '') || 'gemini-2.5-flash';
+      const model = rawModel.replace(/^googleai\//, '') || 'gemini-3.8-flash';
 
       const promptText = typeof options.prompt === 'function' ? options.prompt(input) : renderTemplate(options.prompt, input || {});
 

@@ -2456,39 +2456,29 @@ export function ContentImporterNew({ campaignId }: ContentImporterNewProps) {
     }
   };
 
-  const handleSaveRule = async (rule: ExtractedRuleCard, target: 'campaign' | 'global') => {
+  const handleSaveRule = async (rule: ExtractedRuleCard) => {
     setRules(prev => prev.map(r => r.id === rule.id ? { ...r, isSaving: true } : r));
     try {
-      if (target === 'campaign') {
-        const res = await actions.saveHomebrewRule({
-          campaignId,
-          title: rule.title,
-          content: rule.content,
-          category: rule.chapterTitle || 'Regole',
-          isActive: true
-        });
-        if (res.success) {
-          setRules(prev => prev.map(r => r.id === rule.id ? { ...r, savedCampaign: true, isSaving: false } : r));
-          toast({ title: `Regola "${rule.title}" salvata nella Campagna!` });
-          triggerGlobalSync();
-        } else {
-          throw new Error(res.error || "Errore salvataggio regola");
-        }
+      const res = await actions.saveHomebrewRule({
+        campaignId,
+        title: rule.title,
+        content: rule.content,
+        category: rule.chapterTitle || 'Regole',
+        isActive: true
+      });
+      await actions.importSystemRulesAction([{
+        title: rule.title,
+        content: rule.content,
+        sourceBook: rule.sourceBook,
+        chapterTitle: rule.chapterTitle,
+        tags: rule.tags
+      }]);
+      if (res.success) {
+        setRules(prev => prev.map(r => r.id === rule.id ? { ...r, savedCampaign: true, savedGlobal: true, isSaving: false } : r));
+        toast({ title: `Regola "${rule.title}" salvata nelle Regole!` });
+        triggerGlobalSync();
       } else {
-        const res = await actions.importSystemRulesAction([{
-          title: rule.title,
-          content: rule.content,
-          sourceBook: rule.sourceBook,
-          chapterTitle: rule.chapterTitle,
-          tags: rule.tags
-        }]);
-        if (res.success) {
-          setRules(prev => prev.map(r => r.id === rule.id ? { ...r, savedGlobal: true, isSaving: false } : r));
-          toast({ title: `Regola "${rule.title}" salvata nel Compendio Globale!` });
-          triggerGlobalSync();
-        } else {
-          throw new Error(res.error || "Errore salvataggio compendio");
-        }
+        throw new Error(res.error || "Errore salvataggio regola");
       }
     } catch (e: any) {
       setRules(prev => prev.map(r => r.id === rule.id ? { ...r, isSaving: false } : r));
@@ -2833,9 +2823,16 @@ export function ContentImporterNew({ campaignId }: ContentImporterNewProps) {
             category: r.chapterTitle || 'Regole',
             isActive: true
           });
+          await actions.importSystemRulesAction([{
+            title: r.title,
+            content: r.content,
+            sourceBook: r.sourceBook,
+            chapterTitle: r.chapterTitle,
+            tags: r.tags
+          }]);
           if (res.success) {
             saved++;
-            setRules(prev => prev.map(x => x.id === r.id ? { ...r, savedCampaign: true, isSaving: false } : r));
+            setRules(prev => prev.map(x => x.id === r.id ? { ...x, savedCampaign: true, savedGlobal: true, isSaving: false } : x));
           } else {
             errors++;
             setRules(prev => prev.map(x => x.id === r.id ? { ...x, isSaving: false } : x));
@@ -4492,23 +4489,15 @@ export function ContentImporterNew({ campaignId }: ContentImporterNewProps) {
                             </button>
                           </div>
                         </div>
-                        <CardFooter className="p-3 bg-muted/20 border-t border-border/50 flex items-center justify-end gap-2">
+                        <CardFooter className="p-3 bg-muted/20 border-t border-border/50 flex items-center justify-end">
                           <Button
                             size="sm"
-                            onClick={() => handleSaveRule(r, 'campaign')}
-                            disabled={r.savedCampaign || r.isSaving}
-                            className={cn("h-7 text-xs font-bold", r.savedCampaign ? "bg-emerald-900/60 text-emerald-200" : "bg-primary text-primary-foreground")}
+                            onClick={() => handleSaveRule(r)}
+                            disabled={(r.savedCampaign || r.savedGlobal) || r.isSaving}
+                            className={cn("h-7 text-xs font-bold", (r.savedCampaign || r.savedGlobal) ? "bg-emerald-900/60 text-emerald-200" : "bg-primary text-primary-foreground")}
                           >
-                            {r.savedCampaign ? 'In Regole Campagna' : 'Salva in Campagna'}
-                          </Button>
-                          <Button
-                            size="sm"
-                            variant="outline"
-                            onClick={() => handleSaveRule(r, 'global')}
-                            disabled={r.savedGlobal || r.isSaving}
-                            className="h-7 text-xs font-semibold border-border"
-                          >
-                            {r.savedGlobal ? 'Nel Compendio' : 'Salva Compendio'}
+                            {r.isSaving ? <Loader2 className="h-3 w-3 animate-spin mr-1" /> : (r.savedCampaign || r.savedGlobal) ? <Check className="h-3 w-3 mr-1" /> : <Save className="h-3 w-3 mr-1" />}
+                            {(r.savedCampaign || r.savedGlobal) ? 'Nelle Regole' : 'Salva Regola'}
                           </Button>
                         </CardFooter>
                       </Card>
