@@ -310,14 +310,15 @@ export function GranularQuestCreator({
   // Toggle Item selection
   const handleToggleItem = (item: MagicItem) => {
     setSelectedItems(prev => {
-      const exists = prev.some(i => i.itemId === item.id);
+      const itemId = item.id || item.name;
+      const exists = prev.some(i => i.itemId === itemId);
       if (exists) {
-        return prev.filter(i => i.itemId !== item.id);
+        return prev.filter(i => i.itemId !== itemId);
       } else {
         return [
           ...prev,
           {
-            itemId: item.id,
+            itemId: itemId,
             name: item.name,
             role: 'trovato',
             notes: '',
@@ -2024,7 +2025,7 @@ export function GranularQuestCreator({
                           </Label>
                           <select
                             value={selected.role}
-                            onChange={e => handleUpdateItemRole(item.id, e.target.value as any)}
+                            onChange={e => handleUpdateItemRole(item.id!, e.target.value as any)}
                             className="w-full h-7 rounded bg-slate-900 border border-slate-700 text-slate-200 text-xs px-2 font-medium"
                           >
                             <option value="necessario">🔑 Necessario per proseguire / Chiave</option>
@@ -2042,7 +2043,7 @@ export function GranularQuestCreator({
                             type="text"
                             placeholder="Es. L'amuleto reagisce alla presenza del portale."
                             value={selected.notes || ''}
-                            onChange={e => handleUpdateItemRole(item.id, selected.role || 'trovato', e.target.value)}
+                            onChange={e => handleUpdateItemRole(item.id!, selected.role || 'trovato', e.target.value)}
                             className="h-7 bg-slate-900 border-slate-800 text-xs text-slate-300"
                           />
                         </div>

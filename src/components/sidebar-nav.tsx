@@ -52,6 +52,7 @@ import {
   getBlockedBehavior,
   BlockedBehavior,
   DEFAULT_BLOCKED_VIEWS,
+  syncFromDatabase,
 } from '@/lib/pin-storage';
 import { PinPromptDialog } from './pin-prompt-dialog';
 

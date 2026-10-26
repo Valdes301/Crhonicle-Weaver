@@ -115,6 +115,7 @@ export interface ExtractedEquipmentCard {
   imageUrl?: string | null;
   thumbnailUrl?: string | null;
   rawPageImage?: string | null;
+  pageImages?: string[];
   imageBox?: [number, number, number, number] | { ymin: number; xmin: number; ymax: number; xmax: number } | null;
   savedCampaign?: boolean;
   savedGlobal?: boolean;
@@ -138,6 +139,7 @@ export interface ExtractedMagicItemCard {
   imageUrl?: string | null;
   thumbnailUrl?: string | null;
   rawPageImage?: string | null;
+  pageImages?: string[];
   imageBox?: [number, number, number, number] | { ymin: number; xmin: number; ymax: number; xmax: number } | null;
   savedCampaign?: boolean;
   savedGlobal?: boolean;
@@ -2076,7 +2078,15 @@ export function ContentImporterNew({ campaignId }: ContentImporterNewProps) {
           thumbnailUrl: item.thumbnailUrl || undefined,
         });
         if (res.success) {
-          setMonsters(prev => prev.map(m => m.id === item.id ? { ...m, savedCampaign: true, savedGlobal: true, isSaving: false } : m));
+          const data = res.data as any;
+          setMonsters(prev => prev.map(m => m.id === item.id ? { 
+            ...m, 
+            imageUrl: data?.imageUrl || m.imageUrl,
+            thumbnailUrl: data?.thumbnailUrl || m.thumbnailUrl,
+            savedCampaign: true, 
+            savedGlobal: true, 
+            isSaving: false 
+          } : m));
           toast({ title: `"${item.name}" sovrascritto con successo nel Bestiario!` });
           triggerGlobalSync();
           return true;
@@ -2105,6 +2115,7 @@ export function ContentImporterNew({ campaignId }: ContentImporterNewProps) {
           cost: item.cost || '',
           damage: item.damage || '',
           imageUrl: item.imageUrl || null,
+          thumbnailUrl: item.thumbnailUrl || null,
           techType: isEq ? 'damage' : 'alchemy'
         });
         if (res.success) {
@@ -2231,8 +2242,11 @@ export function ContentImporterNew({ campaignId }: ContentImporterNewProps) {
         thumbnailUrl: monster.thumbnailUrl || undefined,
       });
       if (res.success) {
+        const data = res.data as any;
         setMonsters(prev => prev.map(m => m.id === monster.id ? { 
           ...m, 
+          imageUrl: data?.imageUrl || m.imageUrl,
+          thumbnailUrl: data?.thumbnailUrl || m.thumbnailUrl,
           savedCampaign: true,
           savedGlobal: true,
           isSaving: false 
@@ -2276,11 +2290,15 @@ export function ContentImporterNew({ campaignId }: ContentImporterNewProps) {
         cost: item.cost || '',
         damage: item.damage || '',
         imageUrl: item.imageUrl || null,
+        thumbnailUrl: item.thumbnailUrl || null,
         techType: 'damage'
       });
       if (res.success) {
+        const data = res.data as any;
         setEquipment(prev => prev.map(e => e.id === item.id ? {
           ...e,
+          imageUrl: data?.imageUrl || e.imageUrl,
+          thumbnailUrl: data?.thumbnailUrl || e.thumbnailUrl,
           savedCampaign: target === 'campaign' ? true : e.savedCampaign,
           savedGlobal: target === 'global' ? true : e.savedGlobal,
           isSaving: false
@@ -2324,11 +2342,15 @@ export function ContentImporterNew({ campaignId }: ContentImporterNewProps) {
         cost: item.cost || '',
         damage: item.damage || '',
         imageUrl: item.imageUrl || null,
+        thumbnailUrl: item.thumbnailUrl || null,
         techType: 'alchemy'
       });
       if (res.success) {
+        const data = res.data as any;
         setMagicItems(prev => prev.map(i => i.id === item.id ? {
           ...i,
+          imageUrl: data?.imageUrl || i.imageUrl,
+          thumbnailUrl: data?.thumbnailUrl || i.thumbnailUrl,
           savedCampaign: target === 'campaign' ? true : i.savedCampaign,
           savedGlobal: target === 'global' ? true : i.savedGlobal,
           isSaving: false
@@ -2339,7 +2361,7 @@ export function ContentImporterNew({ campaignId }: ContentImporterNewProps) {
         throw new Error(res.error || "Errore salvataggio oggetto");
       }
     } catch (e: any) {
-      setMagicItems(prev => prev.map(i => i.id === item.id ? { ...i, isSaving: false } : e));
+      setMagicItems(prev => prev.map(i => i.id === item.id ? { ...i, isSaving: false } : i));
       toast({ variant: 'destructive', title: "Errore Salvataggio", description: e.message });
     }
   };
@@ -2611,7 +2633,15 @@ export function ContentImporterNew({ campaignId }: ContentImporterNewProps) {
             });
             if (res.success) {
               saved++;
-              setMonsters(prev => prev.map(x => x.id === m.id ? { ...x, savedCampaign: true, savedGlobal: true, isSaving: false } : x));
+              const data = res.data as any;
+              setMonsters(prev => prev.map(x => x.id === m.id ? { 
+                ...x, 
+                imageUrl: data?.imageUrl || x.imageUrl,
+                thumbnailUrl: data?.thumbnailUrl || x.thumbnailUrl,
+                savedCampaign: true, 
+                savedGlobal: true, 
+                isSaving: false 
+              } : x));
             } else {
               errors++;
               setMonsters(prev => prev.map(x => x.id === m.id ? { ...x, isSaving: false } : x));
@@ -2648,11 +2678,20 @@ export function ContentImporterNew({ campaignId }: ContentImporterNewProps) {
               cost: e.cost || '',
               damage: e.damage || '',
               imageUrl: e.imageUrl || null,
+              thumbnailUrl: e.thumbnailUrl || null,
               techType: 'damage'
             });
             if (res.success) {
               saved++;
-              setEquipment(prev => prev.map(x => x.id === e.id ? { ...x, savedCampaign: true, savedGlobal: true, isSaving: false } : x));
+              const data = res.data as any;
+              setEquipment(prev => prev.map(x => x.id === e.id ? { 
+                ...x, 
+                imageUrl: data?.imageUrl || x.imageUrl,
+                thumbnailUrl: data?.thumbnailUrl || x.thumbnailUrl,
+                savedCampaign: true, 
+                savedGlobal: true, 
+                isSaving: false 
+              } : x));
             } else {
               errors++;
               setEquipment(prev => prev.map(x => x.id === e.id ? { ...x, isSaving: false } : x));
@@ -2689,11 +2728,20 @@ export function ContentImporterNew({ campaignId }: ContentImporterNewProps) {
               cost: item.cost || '',
               damage: item.damage || '',
               imageUrl: item.imageUrl || null,
+              thumbnailUrl: item.thumbnailUrl || null,
               techType: 'alchemy'
             });
             if (res.success) {
               saved++;
-              setMagicItems(prev => prev.map(x => x.id === item.id ? { ...x, savedCampaign: true, savedGlobal: true, isSaving: false } : x));
+              const data = res.data as any;
+              setMagicItems(prev => prev.map(x => x.id === item.id ? { 
+                ...x, 
+                imageUrl: data?.imageUrl || x.imageUrl,
+                thumbnailUrl: data?.thumbnailUrl || x.thumbnailUrl,
+                savedCampaign: true, 
+                savedGlobal: true, 
+                isSaving: false 
+              } : x));
             } else {
               errors++;
               setMagicItems(prev => prev.map(x => x.id === item.id ? { ...x, isSaving: false } : x));
@@ -3708,7 +3756,8 @@ export function ContentImporterNew({ campaignId }: ContentImporterNewProps) {
                                         : (m.rawPageImage ? [m.rawPageImage] : (m.imageUrl ? [m.imageUrl] : []));
                                       setFramerModal({
                                         isOpen: true,
-                                        monsterId: m.id,
+                                        targetId: m.id,
+                                        targetType: 'monster',
                                         imageSrc: (m.rawPageImage || (pages && pages[0]) || m.imageUrl)!,
                                         name: m.name,
                                         availablePages: pages
@@ -3737,7 +3786,8 @@ export function ContentImporterNew({ campaignId }: ContentImporterNewProps) {
                                       const pages = m.pageImages && m.pageImages.length > 0 ? m.pageImages : (m.rawPageImage ? [m.rawPageImage] : []);
                                       setCropperModal({
                                         isOpen: true,
-                                        monsterId: m.id,
+                                        targetId: m.id,
+                                        targetType: 'monster',
                                         imageSrc: (m.rawPageImage || pages[0])!,
                                         name: m.name,
                                         availablePages: pages
@@ -3797,7 +3847,8 @@ export function ContentImporterNew({ campaignId }: ContentImporterNewProps) {
                                       : (m.rawPageImage ? [m.rawPageImage] : (m.imageUrl ? [m.imageUrl] : []));
                                     setCropperModal({
                                       isOpen: true,
-                                      monsterId: m.id,
+                                      targetId: m.id,
+                                      targetType: 'monster',
                                       imageSrc: (m.rawPageImage || m.imageUrl || pages[0])!,
                                       name: m.name,
                                       availablePages: pages
@@ -3817,7 +3868,8 @@ export function ContentImporterNew({ campaignId }: ContentImporterNewProps) {
                                       : (m.rawPageImage ? [m.rawPageImage] : (m.imageUrl ? [m.imageUrl] : []));
                                     setFramerModal({
                                       isOpen: true,
-                                      monsterId: m.id,
+                                      targetId: m.id,
+                                      targetType: 'monster',
                                       imageSrc: (m.rawPageImage || (pages && pages[0]) || m.imageUrl)!,
                                       name: m.name,
                                       availablePages: pages

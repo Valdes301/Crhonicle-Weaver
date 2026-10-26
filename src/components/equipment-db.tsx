@@ -77,7 +77,7 @@ const TechTypeSelector = ({ value, onChange }: { value?: TechType, onChange: (va
     );
 };
 
-function MagicItemFormDialog({ item, campaignId, trigger, onSave }: { item?: Partial<MagicItem>, campaignId: string, trigger: React.ReactNode, onSave: (data: MagicItemFormData & { campaignId: string }) => void }) {
+export function MagicItemFormDialog({ item, campaignId, trigger, onSave }: { item?: Partial<MagicItem>, campaignId: string, trigger: React.ReactNode, onSave: (data: MagicItemFormData & { campaignId: string }) => void }) {
     const [isOpen, setIsOpen] = useState(false);
     const [isUploading, setIsUploading] = useState(false);
     const formId = useId();

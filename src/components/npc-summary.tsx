@@ -1313,14 +1313,13 @@ export function NpcSummary({ campaignId, npcs: initialNpcs }: NpcSummaryProps) {
   };
 
   const toggleNpcHidden = async (npc: NpcWithLastEvent) => {
-    const currentDetails =
-      typeof npc.details === "object" && npc.details ? npc.details : {};
+    const currentDetails = npc.details || {} as NpcDetails;
     const isCurrentlyHidden = currentDetails.isHidden ?? false;
-    const newDetails = { ...currentDetails, isHidden: !isCurrentlyHidden };
+    const newDetails: NpcDetails = { ...currentDetails, isHidden: !isCurrentlyHidden };
 
     // Optimistic state update
     setEnrichedNpcs((prev) =>
-      prev.map((n) => (n.id === npc.id ? { ...n, details: newDetails } : n)),
+      prev.map((n) => (n.id === npc.id ? { ...n, details: newDetails } as NpcWithLastEvent : n)),
     );
 
     const res = await actions.saveNpc({
@@ -1352,8 +1351,7 @@ export function NpcSummary({ campaignId, npcs: initialNpcs }: NpcSummaryProps) {
     npc: NpcWithLastEvent,
     fieldId: string,
   ) => {
-    const currentDetails =
-      typeof npc.details === "object" && npc.details ? npc.details : {};
+    const currentDetails = npc.details || {} as NpcDetails;
     const currentHiddenFields = currentDetails.hiddenFields || [];
     let newHiddenFields: string[];
     if (currentHiddenFields.includes(fieldId)) {
@@ -1361,11 +1359,11 @@ export function NpcSummary({ campaignId, npcs: initialNpcs }: NpcSummaryProps) {
     } else {
       newHiddenFields = [...currentHiddenFields, fieldId];
     }
-    const newDetails = { ...currentDetails, hiddenFields: newHiddenFields };
+    const newDetails: NpcDetails = { ...currentDetails, hiddenFields: newHiddenFields };
 
     // Optimistic state update
     setEnrichedNpcs((prev) =>
-      prev.map((n) => (n.id === npc.id ? { ...n, details: newDetails } : n)),
+      prev.map((n) => (n.id === npc.id ? { ...n, details: newDetails } as NpcWithLastEvent : n)),
     );
 
     const res = await actions.saveNpc({

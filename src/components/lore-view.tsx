@@ -16,7 +16,7 @@ import {
     Plus, 
     Sparkles, 
     Search, 
-    Youtube, 
+    Video, 
     FileText, 
     Trash2, 
     Pencil, 
@@ -377,7 +377,7 @@ export function LoreView({ campaign }: LoreViewProps) {
                                     {getCategoryBadge(entry.category)}
                                     {entry.sourceUrl && (
                                         <Badge variant="secondary" className="text-[10px] gap-1 bg-red-500/10 text-red-400 border-red-500/20">
-                                            <Youtube className="h-3 w-3" /> Video
+                                            <Video className="h-3 w-3" /> Video
                                         </Badge>
                                     )}
                                 </div>
@@ -466,7 +466,7 @@ export function LoreView({ campaign }: LoreViewProps) {
                         <div className="space-y-4 py-2">
                             <div className="space-y-2">
                                 <Label className="flex items-center gap-2 font-semibold text-xs sm:text-sm">
-                                    <Youtube className="h-4 w-4 text-red-500 shrink-0" /> Link Video YouTube
+                                    <Video className="h-4 w-4 text-red-500 shrink-0" /> Link Video YouTube
                                 </Label>
                                 <Input 
                                     placeholder="es. https://youtu.be/2UIoDmpQ7Mw" 
@@ -709,7 +709,7 @@ export function LoreView({ campaign }: LoreViewProps) {
                                                 rel="noreferrer"
                                                 className="inline-flex items-center gap-1 text-[11px] text-red-400 bg-red-500/10 px-2 py-0.5 rounded border border-red-500/20 hover:underline max-w-full truncate"
                                             >
-                                                <Youtube className="h-3 w-3 shrink-0" /> Fonte Video <ExternalLink className="h-3 w-3 shrink-0" />
+                                                <Video className="h-3 w-3 shrink-0" /> Fonte Video <ExternalLink className="h-3 w-3 shrink-0" />
                                             </a>
                                         )}
                                         <Badge variant="outline" className="text-[10px] text-emerald-400 border-emerald-500/30 gap-1 bg-emerald-500/5">

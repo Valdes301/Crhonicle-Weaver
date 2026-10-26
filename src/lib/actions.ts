@@ -24,7 +24,7 @@ import { extractLore } from '@/ai/flows/extract-lore';
 import { expandLore, refineLoreDraft } from '@/ai/flows/expand-lore';
 import { consolidateAndDeduplicateLore, synthesizeInboxNotes } from '@/ai/flows/consolidate-lore';
 import { formatNarrativeText, formatTitleOrTag, sanitizeMonsterType, cleanAiHallucinatoryLoops } from '@/lib/formatter';
-import { extractBaseName, normalizeCompendiumName } from '@/lib/utils';
+import { extractBaseName, normalizeCompendiumName, actionResponse } from '@/lib/utils';
 import { logAiError } from '@/lib/ai-logger';
 import type { Session, CampaignWithRelations, Campaign, MagicItem, Monster, PlayerCharacter, Spell, Skill, LetterPreset, Shop, WorldLocation, Npc, NpcDetails, Combat, CombatDetails, GenerateCombatInput, GenerateNpcInput, GenerateShopInput, GenerateLocationInput, Reward, GenerateTreasureInput, CharacterEvent, StoryArc, HomebrewRule, ApiStats, LoreEntry, LoreVersion, GranularQuestConfig, PcXpAward } from '@/lib/types';
 import { getLevelFromXp } from '@/lib/dnd5e-xp';
@@ -79,8 +79,9 @@ function saveBase64ImageDirectly(imageData?: string | null, entityName?: string)
     if (!imageData) return null;
     if (!imageData.startsWith('data:image/')) return imageData;
     try {
-        const b64 = imageData.replace(/^data:image\/\w+;base64,/, "");
+        const b64 = imageData.replace(/^data:image\/[^;]+;base64,/, "").trim();
         const buf = Buffer.from(b64, 'base64');
+        if (buf.length === 0) return null;
         const sanitizedName = entityName ? entityName.trim().replace(/\s+/g, '_').replace(/[^\w\d_]/g, '') : 'img';
         const name = `${sanitizedName}_${Date.now()}_${Math.random().toString(36).substring(2, 6)}.jpg`;
         const dir = getAssetDir();
@@ -218,10 +219,7 @@ async function runAiWithRetry<T>(aiCall: (modelOverride?: string) => Promise<T>,
     throw lastError;
 }
 
-const actionResponse = <T>(data: T | null, error?: string) => {
-    if (error) return { success: false, data: null, error };
-    return { success: true, data, error: null };
-}
+
 
 async function getActiveHomebrewRulesString(campaignId: string): Promise<string> {
     try {
@@ -1449,9 +1447,9 @@ export async function getAllWorldLocationsAction() {
 
 export async function catalogHandbookAction(content: string, photoDataUri?: string, selectedModel?: string) {
     'use server';
+    let finalModelUsed = selectedModel || getActiveFlashModel('IMPORT');
     try {
         const override = await getSystemOverride('catalog-gen');
-        let finalModelUsed = selectedModel || getActiveFlashModel('IMPORT');
         const data = await runAiWithRetry(async (activeModelOverride) => {
             const genAi = getGenAI();
             const model = activeModelOverride || selectedModel || getActiveFlashModel('IMPORT');
@@ -1916,7 +1914,7 @@ ${override ? `Istruzioni custom: ${override}` : ''}`;
                 if (parts.length > 1) {
                     for (const p of parts) {
                         if (p.includes("Classe Armatura") || p.includes("CA") || p.toLowerCase().includes("aarakocra")) {
-                            const lines = p.split('\n').map(l => l.trim()).filter(Boolean);
+                            const lines = p.split('\n').map((l: string) => l.trim()).filter(Boolean);
                             let mName = lines[0] ? lines[0].replace(/[^a-zA-ZàèìòùÀÈÌÒÙ ]/g, '').trim() : "Creatura";
                             if (isAarakocra && (mName === "Creatura" || mName.toLowerCase().includes("aarakocra"))) mName = "Aarakocra";
                             if (mName.length < 2 || mName.length > 30) mName = isAarakocra ? "Aarakocra" : "Creatura";
@@ -2177,7 +2175,7 @@ export async function deepNpcElaborationAction(npcId: string, campaignId: string
 
 // --- AZIONI CRUD DATABASE (ADAPTIVE) ---
 
-export async function saveMagicItem(item: Partial<MagicItem> & { campaignId: string; overwrite?: boolean; target?: 'system' | 'campaign' }) {
+export async function saveMagicItem(item: Partial<MagicItem> & { campaignId: string; overwrite?: boolean; target?: 'system' | 'campaign'; thumbnailUrl?: string | null }) {
     try {
         ensureSystemCampaignRow();
         const rawTargetId = item.target === 'system' ? 'system' : item.campaignId;
@@ -2199,6 +2197,11 @@ export async function saveMagicItem(item: Partial<MagicItem> & { campaignId: str
         let finalImageUrl = item.imageUrl || null;
         if (finalImageUrl && finalImageUrl.startsWith('data:image/')) {
             finalImageUrl = saveBase64ImageDirectly(finalImageUrl, formattedName);
+        }
+
+        let finalThumbnailUrl = item.thumbnailUrl || null;
+        if (finalThumbnailUrl && finalThumbnailUrl.startsWith('data:image/')) {
+            finalThumbnailUrl = saveBase64ImageDirectly(finalThumbnailUrl, `${formattedName}-thumb`);
         }
 
         // Ricerca duplicati per nome (nello stesso ambito o nel sistema)
@@ -2223,10 +2226,14 @@ export async function saveMagicItem(item: Partial<MagicItem> & { campaignId: str
         }
 
         const targetId = existing?.id || id;
-        const finalResolvedImageUrl = finalImageUrl || existing?.imageUrl || null;
+        const finalResolvedImageUrl = finalImageUrl || (existing && (existing.imageUrl || existing.imageurl)) || null;
+        const finalResolvedThumbnailUrl = finalThumbnailUrl || (existing && (existing.thumbnailUrl || existing.thumbnailurl)) || null;
 
         if (existing && finalImageUrl && existing.imageUrl && existing.imageUrl !== finalImageUrl) {
             deleteAssetFile(existing.imageUrl);
+        }
+        if (existing && finalThumbnailUrl && existing.thumbnailUrl && existing.thumbnailUrl !== finalThumbnailUrl) {
+            deleteAssetFile(existing.thumbnailUrl);
         }
 
         const cleanDesc = cleanAiHallucinatoryLoops(item.description) || (item.overwrite ? '' : existing?.description || '');
@@ -2242,6 +2249,7 @@ export async function saveMagicItem(item: Partial<MagicItem> & { campaignId: str
             damage: item.damage || (item.overwrite ? '' : existing?.damage || ''), 
             techType: item.techType || existing?.techType || 'damage', 
             imageUrl: finalResolvedImageUrl, 
+            thumbnailUrl: finalResolvedThumbnailUrl,
             campaignId: targetCampaignId, 
             createdAt: existing?.createdAt || existing?.createdat || (item as any).createdAt || now, 
             updatedAt: now 
@@ -2265,6 +2273,7 @@ export async function saveMagicItem(item: Partial<MagicItem> & { campaignId: str
                 damage: d.damage,
                 techType: d.techType,
                 imageUrl: finalResolvedImageUrl,
+                thumbnailUrl: finalResolvedThumbnailUrl,
                 updatedAt: now
             };
             if (sysIdx > -1) {
@@ -2275,7 +2284,7 @@ export async function saveMagicItem(item: Partial<MagicItem> & { campaignId: str
             writeSystemJsonFile('custom-items.json', 'items', systemItems);
         } catch {}
 
-        return actionResponse({ success: true, id: targetId, name: formattedName, imageUrl: finalResolvedImageUrl, conflict: false });
+        return actionResponse({ success: true, id: targetId, name: formattedName, imageUrl: finalResolvedImageUrl, thumbnailUrl: finalResolvedThumbnailUrl, conflict: false });
     } catch (e: any) { return actionResponse(null, e.message); }
 }
 
@@ -2435,7 +2444,14 @@ export async function saveMonster(monster: Partial<Monster> & { campaignId: stri
             } catch {}
         }
 
-        return actionResponse({ success: true, id: targetId, name: formattedName, conflict: false });
+        return actionResponse({ 
+            success: true, 
+            id: targetId, 
+            name: formattedName, 
+            imageUrl: finalResolvedImageUrl, 
+            thumbnailUrl: finalResolvedThumbnailUrl, 
+            conflict: false 
+        });
     } catch (e: any) {
         console.error("Error in saveMonster:", e);
         return actionResponse(null, e.message);
@@ -3859,6 +3875,29 @@ export async function saveSystemSetting(key: string, value: string) {
     }
 }
 
+export async function getChatMessagesAction() {
+    'use server';
+    try {
+        const messages = db.prepare("SELECT * FROM MasterChatMessage ORDER BY timestamp ASC").all();
+        return actionResponse(messages);
+    } catch (e: any) {
+        console.error("Errore in getChatMessagesAction:", e);
+        return actionResponse(null, e.message);
+    }
+}
+
+export async function saveChatMessageAction(content: string, sender: string) {
+    'use server';
+    try {
+        const id = randomUUID();
+        db.prepare("INSERT INTO MasterChatMessage (id, content, sender) VALUES (?, ?, ?)").run(id, content, sender);
+        return actionResponse({ id });
+    } catch (e: any) {
+        console.error("Errore in saveChatMessageAction:", e);
+        return actionResponse(null, e.message);
+    }
+}
+
 /**
  * Registra o aggiorna l'attività di un dispositivo.
  */
@@ -4849,7 +4888,7 @@ export async function parsePdfAction(base64Data: string, mimeType: string = 'app
     // Se è un PDF, proviamo prima con il parser locale veloce pdf-parse
     try {
         const pdfModule = await import('pdf-parse');
-        const pdfParse = pdfModule.default || pdfModule;
+        const pdfParse = (pdfModule as any).default || pdfModule;
         const buffer = Buffer.from(base64Data, 'base64');
         const data = await pdfParse(buffer);
         if (data && data.text && data.text.trim().length > 50) {

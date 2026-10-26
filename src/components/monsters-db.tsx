@@ -287,26 +287,25 @@ export function MonsterFormDialog({ monster, campaignId, trigger, onSave }: { mo
             campaignId
         });
 
-        if (result.success && result.data?.conflict) {
-            // Se c'è un conflitto, mostriamo un toast informativo e usiamo il sistema di conferma (qui implementato come interazione successiva)
-            // Nota: in un'app reale useremmo un altro stato per mostrare un dialog di conferma.
-            // Per ora, visto che window.confirm è sconsigliato, implementiamo una logica di "doppio click" o "forza salvataggio" tramite toast.
-            
+        if (result.success && (result.data as any)?.conflict) {
+            const data = result.data as any;
             toast({
                 title: "Conflitto rilevato",
-                description: `Un mostro chiamato "${result.data.existingName}" esiste già. Se vuoi sovrascriverlo, premi di nuovo Salva (l'ID è stato impostato).`,
+                description: `Un mostro chiamato "${data.existingName}" esiste già. Se vuoi sovrascriverlo, premi di nuovo Salva (l'ID è stato impostato).`,
                 variant: "destructive"
             });
             
-            form.setValue('id', result.data.existingId);
-            // Non chiudiamo il dialog, permettiamo all'utente di premere di nuovo Salva
+            form.setValue('id', data.existingId);
             return;
         }
         
-        if (result.success) {
+        if (result.success && result.data) {
+            const data = result.data as any;
             onSave({
                 ...values,
-                id: result.data.id,
+                id: data.id,
+                imageUrl: data.imageUrl || values.imageUrl,
+                thumbnailUrl: data.thumbnailUrl || values.thumbnailUrl,
                 type: sanitizeMonsterType(values.type),
                 description: cleanAiHallucinatoryLoops(values.description),
                 campaignId

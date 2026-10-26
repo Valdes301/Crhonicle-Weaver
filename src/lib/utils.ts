@@ -5,6 +5,11 @@ export function cn(...inputs: ClassValue[]) {
   return twMerge(clsx(inputs))
 }
 
+export const actionResponse = <T>(data: T | null, error?: string) => {
+  if (error) return { success: false, data: null, error };
+  return { success: true, data, error: null };
+}
+
 export function safeJsonParse<T>(value: string | null | undefined, fallback: T): T {
   if (!value || typeof value !== 'string' || value.trim() === '') {
     return fallback;

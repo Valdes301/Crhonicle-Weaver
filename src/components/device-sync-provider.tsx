@@ -211,7 +211,7 @@ export function DeviceSyncProvider({ children, campaignId }: { children: React.R
             <Button 
               variant="outline" 
               size="sm" 
-              onClick={syncDevice}
+              onClick={() => syncDevice()}
               className="w-full mt-4 gap-2 text-xs"
             >
               <RefreshCw className="h-3 w-3 animate-spin" /> Verifica Sblocco

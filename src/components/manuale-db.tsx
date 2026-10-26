@@ -776,7 +776,7 @@ export function ManualeDb({ campaignId }: ManualeDbProps) {
             </AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>
-            <AlertDialogCancel size="sm">Annulla</AlertDialogCancel>
+            <AlertDialogCancel>Annulla</AlertDialogCancel>
             <AlertDialogAction 
               onClick={handleDeleteChapter}
               className="bg-destructive hover:bg-destructive/90 text-destructive-foreground text-xs"
@@ -800,7 +800,7 @@ export function ManualeDb({ campaignId }: ManualeDbProps) {
             </AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>
-            <AlertDialogCancel size="sm">Annulla</AlertDialogCancel>
+            <AlertDialogCancel>Annulla</AlertDialogCancel>
             <AlertDialogAction 
               onClick={handleClearManual}
               className="bg-destructive hover:bg-destructive/90 text-destructive-foreground text-xs"

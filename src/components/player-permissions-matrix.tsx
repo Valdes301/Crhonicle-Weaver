@@ -116,6 +116,11 @@ export function PlayerPermissionsMatrix({ campaignId }: { campaignId?: string })
   const [locSearch, setLocSearch] = useState<string>('');
   const lastUserEditTimeRef = React.useRef(0);
 
+  const blockedViews = useMemo(() => 
+    NAV_SECTIONS.filter(s => !visibleViews.includes(s.id)).map(s => s.id),
+    [visibleViews]
+  );
+
   // Tab 1 state synchronization
   useEffect(() => {
     setPlayerModeState(isPlayerMode());
@@ -173,9 +178,9 @@ export function PlayerPermissionsMatrix({ campaignId }: { campaignId?: string })
 
     // Fetch devices initially
     const fetchDevices = async () => {
-      const devRes = await actions.getDevicesAction(campaignId);
+      const devRes = await actions.getDevicesAction();
       if (devRes.success && devRes.data) {
-        setDevices(devRes.data);
+        setDevices(devRes.data as Device[]);
       }
     };
     fetchDevices();
@@ -291,8 +296,8 @@ export function PlayerPermissionsMatrix({ campaignId }: { campaignId?: string })
     const res = await actions.updateDeviceConfigAction(deviceId, updates);
     if (!res.success) {
       toast({ variant: 'destructive', title: 'Errore', description: res.error });
-      const devRes = await actions.getDevicesAction(campaignId || '');
-      if (devRes.success && devRes.data) setDevices(devRes.data);
+      const devRes = await actions.getDevicesAction();
+      if (devRes.success && devRes.data) setDevices(devRes.data as Device[]);
     }
   };
 
@@ -321,17 +326,17 @@ export function PlayerPermissionsMatrix({ campaignId }: { campaignId?: string })
   const handleSetDeviceRole = async (device: Device, role: 'master' | 'player' | 'isola') => {
     setDevices(prev => prev.map(d => {
       if (d.id !== device.id) return d;
-      if (role === 'master') return { ...d, mode: 'master', is_blocked: 0 };
-      if (role === 'player') return { ...d, mode: 'player', is_blocked: 0 };
-      if (role === 'isola') return { ...d, is_blocked: 1 };
+      if (role === 'master') return { ...d, mode: 'master' as const, is_blocked: false };
+      if (role === 'player') return { ...d, mode: 'player' as const, is_blocked: false };
+      if (role === 'isola') return { ...d, is_blocked: true };
       return d;
     }));
 
     const res = await actions.setDeviceRoleAction(device.id, role);
     if (!res.success) {
       toast({ variant: 'destructive', title: 'Errore', description: res.error });
-      const devRes = await actions.getDevicesAction(campaignId || '');
-      if (devRes.success && devRes.data) setDevices(devRes.data);
+      const devRes = await actions.getDevicesAction();
+      if (devRes.success && devRes.data) setDevices(devRes.data as Device[]);
     } else {
       toast({ 
         title: role === 'master' ? 'Ruolo Master Assegnato' : role === 'player' ? 'Ruolo Giocatore Assegnato' : 'Dispositivo Isolato',

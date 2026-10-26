@@ -32,7 +32,7 @@ export async function parsePdfAction(base64Data: string, mimeType: string = 'app
     // Se è un PDF, proviamo prima con il parser locale veloce pdf-parse
     try {
         const pdfModule = await import('pdf-parse');
-        const pdfParse = pdfModule.default || pdfModule;
+        const pdfParse = (pdfModule as any).default || pdfModule;
         const buffer = Buffer.from(base64Data, 'base64');
         const data = await pdfParse(buffer);
         if (data && data.text && data.text.trim().length > 50) {
